@@ -1,0 +1,224 @@
+import streamlit as st
+import pandas as pd
+from langchain_anthropic import ChatAnthropic
+
+from core.director import NegotiationDirector
+from scenario_state import get_active_scenario
+
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "round" not in st.session_state:
+    st.session_state.round = 0
+if "director" not in st.session_state:
+    st.session_state.director = None
+if "round_evaluations" not in st.session_state:
+    st.session_state.round_evaluations = []
+if "evaluation" not in st.session_state:
+    st.session_state.evaluation = None
+if "evaluations_df" not in st.session_state:
+    st.session_state.evaluations_df = pd.DataFrame()
+
+st.title("Dialogue Simulation")
+st.markdown(
+    """
+Implement iterative rounds of conversation where agents exchange proposals until an agreement
+or impasse is reached. We may have test variations such as:
+
+- **Cooperative Mode** - shared goal
+- **Competitive Mode** - conflicting goals
+- **Mixed Mode** - partial cooperation or deception allowed
+"""
+)
+
+active_file, active_payload = get_active_scenario()
+if isinstance(active_payload, dict):
+    active_scenario_name = active_payload.get("name", active_file or "Unknown Scenario")
+else:
+    active_scenario_name = active_file or "No scenario selected"
+
+if not isinstance(active_payload, dict):
+    st.warning("Select a scenario from Home before starting the dialogue.")
+    st.stop()
+
+
+# Factory for model instances; customize this per agent if needed.
+def llm_factory(_spec):
+    return ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.2)
+
+
+def get_or_create_director() -> NegotiationDirector:
+    # Reuse the director in session state until the selected scenario changes.
+    current_file = st.session_state.get("director_scenario_file")
+    if st.session_state.director is None or current_file != active_file:
+        st.session_state.director = NegotiationDirector(active_payload, llm_factory)
+        st.session_state.director_scenario_file = active_file
+    return st.session_state.director
+
+
+def advance_round_and_evaluate():
+    # Execute one full round and immediately evaluate the updated transcript.
+    director = get_or_create_director()
+    if director.round >= director.max_rounds:
+        return
+
+    if director.get_history():
+        input_message = director.get_history()[-1]["content"]
+    else:
+        input_message = "Let's begin the negotiation. Present your first proposal."
+
+    turn_messages = director.step(input_message)
+
+    judge_llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0)
+    evaluation = director.evaluate(judge_llm)
+
+    st.session_state.history = director.get_history()
+    st.session_state.round = director.round
+    st.session_state.evaluation = evaluation
+    st.session_state.round_evaluations.append(
+        {
+            "round": director.round,
+            "turn_messages": turn_messages,
+            "evaluation": evaluation,
+        }
+    )
+    row = _build_evaluation_row(director.round, evaluation)
+    st.session_state.evaluations_df = pd.concat(
+        [st.session_state.evaluations_df, pd.DataFrame([row])],
+        ignore_index=True,
+    )
+
+
+def _build_evaluation_row(round_id: int, evaluation: dict) -> dict:
+    row = {"round": round_id}
+    for key, value in evaluation.items():
+        if isinstance(value, list):
+            row[key] = ", ".join(str(item) for item in value)
+        elif isinstance(value, dict):
+            row[key] = str(value)
+        else:
+            row[key] = value
+    return row
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _metric_delta(current_value, previous_value):
+    current_int = _to_int(current_value)
+    previous_int = _to_int(previous_value)
+    if current_int is None or previous_int is None:
+        return None
+    return current_int - previous_int
+
+
+def reset_dialogue():
+    director = get_or_create_director()
+    director.reset()
+    st.session_state.history = []
+    st.session_state.round = 0
+    st.session_state.evaluation = None
+    st.session_state.round_evaluations = []
+    st.session_state.evaluations_df = pd.DataFrame()
+
+
+director = get_or_create_director()
+has_reached_max_rounds = director.round >= director.max_rounds
+
+col1, col2, col3, col4 = st.columns([3, 3, 2, 2], vertical_alignment="bottom")
+with col1:
+    scenario = st.selectbox("Scenario Design", [active_scenario_name], disabled=True)
+with col2:
+    mode = st.selectbox(
+        "Mode",
+        [active_payload.get("negotiation_rules", {}).get("mode", "competitive").capitalize()],
+        disabled=True,
+    )
+with col3:
+    if st.button("Advance Conversation", width="stretch", disabled=has_reached_max_rounds):
+        with st.spinner("Running round and evaluating..."):
+            advance_round_and_evaluate()
+with col4:
+    if st.button("Reset", width="stretch"):
+        reset_dialogue()
+
+st.caption(f"Scenario in use: {scenario}")
+st.caption(f"Rounds completed: {st.session_state.round}")
+st.caption(f"Max rounds: {director.max_rounds}")
+if has_reached_max_rounds:
+    st.info("Maximum number of rounds reached. Use Reset to start over.")
+
+dialogue_col, judge_col = st.columns([3, 1], gap="xsmall", border=True, vertical_alignment="top")
+
+with dialogue_col:
+    st.subheader("Agent Dialogue")
+    if not st.session_state.history:
+        st.caption("No dialogue yet. Click 'Advance Conversation' to run the first round of negotiation.")
+    else:
+        for msg in st.session_state.history:
+            with st.chat_message(msg["agent"]):
+                st.write(msg["content"])
+
+with judge_col:
+    st.subheader("Judge")
+    if st.session_state.evaluation is not None:
+        st.caption(f"Latest evaluation - round {st.session_state.round}")
+
+        current_eval = st.session_state.evaluation
+        previous_eval = (
+            st.session_state.round_evaluations[-2]["evaluation"]
+            if len(st.session_state.round_evaluations) > 1
+            else {}
+        )
+        metric_specs = active_payload.get("metrics", {})
+        numeric_metrics: list[tuple[str, str, str]] = []
+
+        for metric_name, metric_spec in metric_specs.items():
+            label = metric_name.replace("_", " ").title()
+            metric_type = metric_spec.get("type")
+
+            if metric_type == "boolean":
+                metric_value = current_eval.get(metric_name, "Unknown")
+                if isinstance(metric_value, bool):
+                    st.badge(
+                        f"{label}: {metric_value}",
+                        color="green" if metric_value else "red",
+                    )
+                else:
+                    st.caption(f"{label}: {metric_value}")
+                continue
+
+            numeric_metrics.append((metric_name, label, f"{metric_name}_top_words"))
+
+        if numeric_metrics:
+            first_col, second_col = st.columns(2)
+            for index, (metric_name, label, top_words_key) in enumerate(numeric_metrics):
+                current_value = _to_int(current_eval.get(metric_name))
+                previous_value = _to_int(previous_eval.get(metric_name))
+                target_col = first_col if index % 2 == 0 else second_col
+
+                with target_col:
+                    st.metric(
+                        label=label,
+                        value=current_value if current_value is not None else "N/A",
+                        delta=_metric_delta(current_value, previous_value),
+                    )
+                    top_words = current_eval.get(top_words_key)
+                    if (
+                        isinstance(top_words, list)
+                        and len(top_words) == 2
+                        and all(isinstance(word, str) for word in top_words)
+                    ):
+                        st.caption(f"Top drivers: {top_words[0]}, {top_words[1]}")
+
+        st.write(current_eval.get("summary", "No summary provided."))
+
+        with st.expander("Round History"):
+            for item in reversed(st.session_state.round_evaluations):
+                st.markdown(f"**Round {item['round']}**")
+                st.json(item["evaluation"], expanded=False)
+    else:
+        st.caption("Run the first round to get judge feedback.")

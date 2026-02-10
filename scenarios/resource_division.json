@@ -1,0 +1,154 @@
+{
+  "name": "Resource Division",
+  "description": "Two co-founders of a start-up must divide equity, initial financial resources and decision-making roles. They have asymmetrical contributions and different assessments of the future value of the company.",
+  
+  "agents": [
+    {
+      "id": "agent_a",
+      "name": "The Technical Founder",
+      "role": "CTO",
+      "public_description": "The technical founder who developed the core software",
+      
+      "objective": "to obtain at least 60% equity because it has developed core business",
+      
+      "resources": {
+        "owns": ["software_ip"],
+        "description": "Software intellectual property (high perceived value)"
+      },
+      
+      "constraints": [
+        "needs capital for development",
+        "willing to relinquish operational control"
+      ],
+      
+      "utility_function": {
+        "equity": 0.40,
+        "decision_control": 0.30,
+        "financial_resources": 0.30
+      },
+      
+      "private_goals": {
+        "min_equity_percent": 60,
+        "preferred_equity_percent": 70,
+        "must_control_areas": ["product"],
+        "budget_needed": 40000
+      }
+    },
+    
+    {
+      "id": "agent_b",
+      "name": "The Business Founder",
+      "role": "CEO",
+      "public_description": "The business founder with capital and network",
+      
+      "objective": "to obtain 50% equity + operational control",
+      
+      "resources": {
+        "owns": ["capital", "network"],
+        "description": "€100k capital and contacts network (high perceived value)",
+        "capital_amount": 100000
+      },
+      
+      "constraints": [
+        "wants to protect investment funds"
+      ],
+      
+      "utility_function": {
+        "equity": 0.50,
+        "operational_control": 0.40,
+        "financial_guarantees": 0.10
+      },
+      
+      "private_goals": {
+        "min_equity_percent": 50,
+        "preferred_equity_percent": 60,
+        "must_control_areas": ["marketing", "hiring"],
+        "investment_to_protect": 100000
+      }
+    }
+  ],
+  
+  "resources_to_negotiate": {
+    "equity": {
+      "total": 100,
+      "unit": "percent",
+      "divisible": true,
+      "description": "Equity share: 100% total"
+    },
+    
+    "budget": {
+      "total": 100000,
+      "currency": "EUR",
+      "categories": {
+        "salaries": {"min": 0, "max": 100000},
+        "marketing": {"min": 0, "max": 100000},
+        "development": {"min": 0, "max": 100000}
+      },
+      "constraint": "sum must equal 100000",
+      "description": "Budget allocation: €100,000 (salaries, marketing, development)"
+    },
+    
+    "decision_rights": {
+      "areas": ["product", "marketing", "hiring"],
+      "assignable_to": ["agent_a", "agent_b", "shared"],
+      "description": "Decision rights: Product, Marketing, Hiring"
+    },
+    
+    "vesting": {
+      "options": ["immediate", "1_year", "4_years"],
+      "description": "Vesting schedule: Immediate vs. 4 years"
+    }
+  },
+  
+  "metrics": {
+    "agreement_reached": {
+      "type": "boolean",
+      "auto_detect": true,
+      "description": "Whether agents reached an agreement"
+    },
+    
+    "fairness": {
+      "type": "survey",
+      "scale": "1-10",
+      "collect_from": "user",
+      "description": "Post-negotiation fairness perception"
+    },
+    "cooperativeness": {
+      "type": "survey",
+      "scale": "1-10",
+      "collect_from": "user",
+      "description": "Post-negotiation cooperativeness perception"
+    },
+    "manipulativeness": {
+      "type": "survey",
+      "scale": "1-10",
+      "collect_from": "user",
+      "description": "Post-negotiation manipulativeness perception"
+    },
+    "conversation_quality": {
+      "type": "survey",
+      "scale": "1-10",
+      "collect_from": "user",
+      "description": "Post-negotiation conversation quality perception"
+    },
+    "ambiguity": {
+      "type": "survey",
+      "scale": "1-10",
+      "collect_from": "user",
+      "description": "Post-negotiation ambiguity perception"
+    }
+  },
+  
+  "negotiation_rules": {
+    "utility_score": {
+      "type": "calculated",
+      "range": "0-100",
+      "formula": "based on utility_function",
+      "description": "Utility score per agent based on final agreement"
+    },
+    "max_rounds": 10,
+    "mode": "competitive",
+    "allow_partial_agreements": true,
+    "require_unanimous_agreement": true
+  }
+}
