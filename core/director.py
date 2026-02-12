@@ -64,6 +64,9 @@ class NegotiationDirector:
         self.scenario = scenario
         self.round = 0
         self.history: list[dict[str, str]] = []
+        self.latest_agreement_status = "ongoing"
+        self.is_terminated = False
+        self.termination_reason: str | None = None
 
         # Numero massimo turni governato dal JSON (con default sicuro).
         self.max_rounds = scenario.get("negotiation_rules", {}).get("max_rounds", 10)
@@ -95,6 +98,9 @@ class NegotiationDirector:
         # Ripristina stato dialogo senza ricostruire gli agenti.
         self.round = 0
         self.history = []
+        self.latest_agreement_status = "ongoing"
+        self.is_terminated = False
+        self.termination_reason = None
 
     def step(self, input_message: str) -> list[dict[str, str]]:
         """
@@ -102,7 +108,7 @@ class NegotiationDirector:
         - ogni agente parla una volta in sequenza
         - l'output di un agente diventa input del successivo
         """
-        if not self.agents:
+        if not self.agents or not self.can_advance():
             return []
 
         turn_messages: list[dict[str, str]] = []
@@ -121,7 +127,7 @@ class NegotiationDirector:
     def run(self, opening_message: str) -> list[dict[str, str]]:
         # Loop multi-round con stop su max_rounds o marker semantici nel testo.
         message = opening_message
-        while self.round < self.max_rounds:
+        while self.can_advance():
             turn = self.step(message)
             if not turn:
                 break
@@ -131,6 +137,46 @@ class NegotiationDirector:
                 break
 
         return self.history
+
+    def can_advance(self) -> bool:
+        if self.is_terminated:
+            return False
+        if self.round >= self.max_rounds:
+            self._terminate("stalled", "ongoing")
+            return False
+        return True
+
+    def register_evaluation(self, evaluation: dict[str, Any]) -> None:
+        status = self._extract_agreement_status(evaluation)
+        if status is not None:
+            self.latest_agreement_status = status
+
+        if self.latest_agreement_status == "reached":
+            self._terminate("reached", "reached")
+            return
+        if self.latest_agreement_status == "failed":
+            self._terminate("failed", "failed")
+            return
+
+        if self.round >= self.max_rounds:
+            self._terminate("stalled", "ongoing")
+
+    def _terminate(self, reason: str, status: str) -> None:
+        self.is_terminated = True
+        self.termination_reason = reason
+        self.latest_agreement_status = status
+
+    @staticmethod
+    def _extract_agreement_status(evaluation: dict[str, Any]) -> str | None:
+        raw_status = evaluation.get("agreement_status")
+        normalized = NegotiationDirector._normalize_agreement_status(raw_status)
+        if normalized is not None:
+            return normalized
+
+        legacy = evaluation.get("agreement_reached")
+        if isinstance(legacy, bool):
+            return "reached" if legacy else "failed"
+        return None
 
     def get_history(self) -> list[dict[str, str]]:
         # Accesso strutturato allo storico per UI, persistence o analytics.
@@ -239,3 +285,13 @@ class NegotiationDirector:
             if label:
                 parsed_values.append(label)
         return parsed_values
+
+    @staticmethod
+    def _normalize_agreement_status(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+
+        label = value.split(":", 1)[0].strip().lower()
+        if label in {"ongoing", "reached", "failed"}:
+            return label
+        return None

@@ -82,7 +82,7 @@ def get_or_create_director() -> NegotiationDirector:
 def advance_round_and_evaluate():
     # Execute one full round and immediately evaluate the updated transcript.
     director = get_or_create_director()
-    if director.round >= director.max_rounds:
+    if not director.can_advance():
         return
 
     if director.get_history():
@@ -94,6 +94,7 @@ def advance_round_and_evaluate():
 
     judge_llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0)
     evaluation = director.evaluate(judge_llm)
+    director.register_evaluation(evaluation)
 
     st.session_state.history = director.get_history()
     st.session_state.round = director.round
@@ -162,6 +163,63 @@ def _enum_color_map(metric_spec: dict) -> dict[str, str]:
     return color_map
 
 
+def _render_judge_evaluation(current_eval: dict, previous_eval: dict, metric_specs: dict):
+    numeric_metrics: list[tuple[str, str, str]] = []
+
+    for metric_name, metric_spec in metric_specs.items():
+        label = metric_name.replace("_", " ").title()
+        metric_type = str(metric_spec.get("type", "")).lower()
+
+        if metric_type == "boolean":
+            metric_value = current_eval.get(metric_name, "Unknown")
+            if isinstance(metric_value, bool):
+                st.badge(
+                    f"{label}: {metric_value}",
+                    color="green" if metric_value else "red",
+                )
+            else:
+                st.caption(f"{label}: {metric_value}")
+            continue
+
+        if metric_type in ("enum", "multiclass", "categorical"):
+            metric_value = current_eval.get(metric_name)
+            normalized_value = _normalize_enum_label(metric_value)
+            color_map = _enum_color_map(metric_spec)
+            if normalized_value:
+                st.badge(
+                    f"{label}: {normalized_value}",
+                    color=color_map.get(normalized_value, "gray"),
+                )
+            else:
+                st.caption(f"{label}: {metric_value if metric_value is not None else 'Unknown'}")
+            continue
+
+        numeric_metrics.append((metric_name, label, f"{metric_name}_top_words"))
+
+    if numeric_metrics:
+        first_col, second_col = st.columns(2)
+        for index, (metric_name, label, top_words_key) in enumerate(numeric_metrics):
+            current_value = _to_int(current_eval.get(metric_name))
+            previous_value = _to_int(previous_eval.get(metric_name))
+            target_col = first_col if index % 2 == 0 else second_col
+
+            with target_col:
+                st.metric(
+                    label=label,
+                    value=current_value if current_value is not None else "N/A",
+                    delta=_metric_delta(current_value, previous_value),
+                )
+                top_words = current_eval.get(top_words_key)
+                if (
+                    isinstance(top_words, list)
+                    and len(top_words) == 2
+                    and all(isinstance(word, str) for word in top_words)
+                ):
+                    st.caption(f"Top drivers: {top_words[0]}, {top_words[1]}")
+
+    st.write(current_eval.get("summary", "No summary provided."))
+
+
 def reset_dialogue():
     director = get_or_create_director()
     director.reset()
@@ -173,7 +231,7 @@ def reset_dialogue():
 
 
 director = get_or_create_director()
-has_reached_max_rounds = director.round >= director.max_rounds
+can_advance_conversation = director.can_advance()
 
 col1, col2, col3, col4 = st.columns([3, 3, 2, 2], vertical_alignment="bottom")
 with col1:
@@ -185,7 +243,7 @@ with col2:
         disabled=True,
     )
 with col3:
-    if st.button("Advance Conversation", width="stretch", disabled=has_reached_max_rounds):
+    if st.button("Advance Conversation", width="stretch", disabled=not can_advance_conversation):
         with st.spinner("Running round and evaluating..."):
             advance_round_and_evaluate()
 with col4:
@@ -195,90 +253,38 @@ with col4:
 st.caption(f"Scenario in use: {scenario}")
 st.caption(f"Rounds completed: {st.session_state.round}")
 st.caption(f"Max rounds: {director.max_rounds}")
-if has_reached_max_rounds:
-    st.info("Maximum number of rounds reached. Use Reset to start over.")
+if director.is_terminated:
+    if director.termination_reason == "reached":
+        st.success("Negotiation ended: agreement reached.")
+    elif director.termination_reason == "failed":
+        st.error("Negotiation ended: agreement failed.")
+    elif director.termination_reason == "stalled":
+        st.warning("Negotiation ended: stalled after reaching the maximum number of rounds.")
 
-dialogue_col, judge_col = st.columns([3, 1], gap="xsmall", border=True, vertical_alignment="top")
-
-with dialogue_col:
-    st.subheader("Agent Dialogue")
-    if not st.session_state.history:
-        st.caption("No dialogue yet. Click 'Advance Conversation' to run the first round of negotiation.")
-    else:
-        for msg in st.session_state.history:
-            with st.chat_message(msg["agent"]):
-                st.write(msg["content"])
-
-with judge_col:
-    st.subheader("Judge")
-    if st.session_state.evaluation is not None:
-        st.caption(f"Latest evaluation - round {st.session_state.round}")
-
-        current_eval = st.session_state.evaluation
-        previous_eval = (
-            st.session_state.round_evaluations[-2]["evaluation"]
-            if len(st.session_state.round_evaluations) > 1
+st.subheader("Round by Round")
+if not st.session_state.round_evaluations:
+    st.caption("No dialogue yet. Click 'Advance Conversation' to run the first round of negotiation.")
+else:
+    metric_specs = active_payload.get("metrics", {})
+    for idx, item in enumerate(st.session_state.round_evaluations):
+        prev_eval = (
+            st.session_state.round_evaluations[idx - 1]["evaluation"]
+            if idx > 0
             else {}
         )
-        metric_specs = active_payload.get("metrics", {})
-        numeric_metrics: list[tuple[str, str, str]] = []
+        round_id = item.get("round")
+        turn_messages = item.get("turn_messages", [])
+        current_eval = item.get("evaluation", {})
 
-        for metric_name, metric_spec in metric_specs.items():
-            label = metric_name.replace("_", " ").title()
-            metric_type = str(metric_spec.get("type", "")).lower()
+        st.markdown(f"**Round {round_id}**")
+        dialogue_col, judge_col = st.columns([3, 1], gap="small", vertical_alignment="top")
 
-            if metric_type == "boolean":
-                metric_value = current_eval.get(metric_name, "Unknown")
-                if isinstance(metric_value, bool):
-                    st.badge(
-                        f"{label}: {metric_value}",
-                        color="green" if metric_value else "red",
-                    )
-                else:
-                    st.caption(f"{label}: {metric_value}")
-                continue
+        with dialogue_col:
+            with st.container(border=True):
+                for msg in turn_messages:
+                    with st.chat_message(msg.get("agent", "Agent")):
+                        st.write(msg.get("content", ""))
 
-            if metric_type in ("enum", "multiclass", "categorical"):
-                metric_value = current_eval.get(metric_name)
-                normalized_value = _normalize_enum_label(metric_value)
-                color_map = _enum_color_map(metric_spec)
-                if normalized_value:
-                    st.badge(
-                        f"{label}: {normalized_value}",
-                        color=color_map.get(normalized_value, "gray"),
-                    )
-                else:
-                    st.caption(f"{label}: {metric_value if metric_value is not None else 'Unknown'}")
-                continue
-
-            numeric_metrics.append((metric_name, label, f"{metric_name}_top_words"))
-
-        if numeric_metrics:
-            first_col, second_col = st.columns(2)
-            for index, (metric_name, label, top_words_key) in enumerate(numeric_metrics):
-                current_value = _to_int(current_eval.get(metric_name))
-                previous_value = _to_int(previous_eval.get(metric_name))
-                target_col = first_col if index % 2 == 0 else second_col
-
-                with target_col:
-                    st.metric(
-                        label=label,
-                        value=current_value if current_value is not None else "N/A",
-                        delta=_metric_delta(current_value, previous_value),
-                    )
-                    top_words = current_eval.get(top_words_key)
-                    if (
-                        isinstance(top_words, list)
-                        and len(top_words) == 2
-                        and all(isinstance(word, str) for word in top_words)
-                    ):
-                        st.caption(f"Top drivers: {top_words[0]}, {top_words[1]}")
-
-        st.write(current_eval.get("summary", "No summary provided."))
-
-        with st.expander("Round History"):
-            for item in reversed(st.session_state.round_evaluations):
-                st.markdown(f"**Round {item['round']}**")
-                st.json(item["evaluation"], expanded=False)
-    else:
-        st.caption("Run the first round to get judge feedback.")
+        with judge_col:
+            with st.container(border=True):
+                _render_judge_evaluation(current_eval, prev_eval, metric_specs)
