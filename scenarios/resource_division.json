@@ -101,51 +101,46 @@
   },
   
   "metrics": {
-    "agreement_reached": {
-      "type": "boolean",
+    "agreement_status": {
+      "type": "multiclass",
       "auto_detect": true,
+      "values": ["reached:green", "failed:red", "ongoing:blue"],
       "description": "Whether agents reached an agreement"
     },
     
     "fairness": {
-      "type": "survey",
+      "type": "score",
       "scale": "1-10",
       "collect_from": "user",
-      "description": "Post-negotiation fairness perception"
+      "description": "Post-negotiation fairness perception, higher better"
     },
     "cooperativeness": {
-      "type": "survey",
+      "type": "score",
       "scale": "1-10",
       "collect_from": "user",
-      "description": "Post-negotiation cooperativeness perception"
+      "description": "Post-negotiation cooperativeness perception, higher better"
     },
     "manipulativeness": {
-      "type": "survey",
+      "type": "score",
       "scale": "1-10",
       "collect_from": "user",
-      "description": "Post-negotiation manipulativeness perception"
+      "description": "Post-negotiation manipulativeness perception, lower better"
     },
     "conversation_quality": {
-      "type": "survey",
+      "type": "score",
       "scale": "1-10",
       "collect_from": "user",
-      "description": "Post-negotiation conversation quality perception"
+      "description": "Post-negotiation conversation quality perception, higher better"
     },
     "ambiguity": {
-      "type": "survey",
+      "type": "score",
       "scale": "1-10",
       "collect_from": "user",
-      "description": "Post-negotiation ambiguity perception"
+      "description": "Post-negotiation ambiguity perception, lower better"
     }
   },
   
   "negotiation_rules": {
-    "utility_score": {
-      "type": "calculated",
-      "range": "0-100",
-      "formula": "based on utility_function",
-      "description": "Utility score per agent based on final agreement"
-    },
     "max_rounds": 10,
     "mode": "competitive",
     "allow_partial_agreements": true,

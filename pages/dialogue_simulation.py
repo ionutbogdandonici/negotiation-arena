@@ -115,6 +115,29 @@ def _metric_delta(current_value, previous_value):
     return current_int - previous_int
 
 
+def _normalize_enum_label(value):
+    if not isinstance(value, str):
+        return None
+    return value.split(":", 1)[0].strip().lower()
+
+
+def _enum_color_map(metric_spec: dict) -> dict[str, str]:
+    color_map: dict[str, str] = {}
+    values = metric_spec.get("values", [])
+    if not isinstance(values, list):
+        return color_map
+
+    for raw_value in values:
+        if not isinstance(raw_value, str):
+            continue
+        parts = raw_value.split(":", 1)
+        label = parts[0].strip().lower()
+        color = parts[1].strip().lower() if len(parts) == 2 else "gray"
+        if label:
+            color_map[label] = color
+    return color_map
+
+
 def reset_dialogue():
     director = get_or_create_director()
     director.reset()
@@ -178,7 +201,7 @@ with judge_col:
 
         for metric_name, metric_spec in metric_specs.items():
             label = metric_name.replace("_", " ").title()
-            metric_type = metric_spec.get("type")
+            metric_type = str(metric_spec.get("type", "")).lower()
 
             if metric_type == "boolean":
                 metric_value = current_eval.get(metric_name, "Unknown")
@@ -189,6 +212,19 @@ with judge_col:
                     )
                 else:
                     st.caption(f"{label}: {metric_value}")
+                continue
+
+            if metric_type in ("enum", "multiclass", "categorical"):
+                metric_value = current_eval.get(metric_name)
+                normalized_value = _normalize_enum_label(metric_value)
+                color_map = _enum_color_map(metric_spec)
+                if normalized_value:
+                    st.badge(
+                        f"{label}: {normalized_value}",
+                        color=color_map.get(normalized_value, "gray"),
+                    )
+                else:
+                    st.caption(f"{label}: {metric_value if metric_value is not None else 'Unknown'}")
                 continue
 
             numeric_metrics.append((metric_name, label, f"{metric_name}_top_words"))

@@ -160,10 +160,20 @@ class NegotiationDirector:
         ]
 
         for metric_name, metric_spec in metrics.items():
-            metric_type = metric_spec.get("type", "")
+            metric_type = str(metric_spec.get("type", "")).lower()
 
             if metric_type == "boolean":
                 schema_lines.append(f'  "{metric_name}": boolean,')
+            elif metric_type in ("enum", "multiclass", "categorical"):
+                allowed_values = self._allowed_enum_values(metric_spec)
+                if allowed_values:
+                    joined_values = ", ".join(f'"{value}"' for value in allowed_values)
+                    schema_lines.append(f'  "{metric_name}": one of [{joined_values}],')
+                    rules_lines.append(
+                        f"- For {metric_name}, output exactly one label from: {joined_values}."
+                    )
+                else:
+                    schema_lines.append(f'  "{metric_name}": string,')
             else:
                 schema_lines.append(f'  "{metric_name}": integer,')
                 schema_lines.append(f'  "{metric_name}_top_words": [string, string],')
@@ -214,3 +224,18 @@ class NegotiationDirector:
             text = re.sub(r"^```(?:json)?\s*", "", text)
             text = re.sub(r"\s*```$", "", text)
         return text.strip()
+
+    @staticmethod
+    def _allowed_enum_values(metric_spec: dict[str, Any]) -> list[str]:
+        values = metric_spec.get("values", [])
+        if not isinstance(values, list):
+            return []
+
+        parsed_values = []
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            label = value.split(":", 1)[0].strip().lower()
+            if label:
+                parsed_values.append(label)
+        return parsed_values

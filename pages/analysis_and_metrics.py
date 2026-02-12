@@ -17,6 +17,28 @@ def _coalesce_numeric(row: dict, keys: list[str]):
     return None
 
 
+def _normalize_enum_label(value):
+    if not isinstance(value, str):
+        return None
+    return value.split(":", 1)[0].strip().lower()
+
+
+def _agreement_status_and_color(row: dict) -> tuple[str, str]:
+    # Backward compatibility with old boolean metric.
+    legacy = row.get("agreement_reached")
+    if isinstance(legacy, bool):
+        return ("reached", "green") if legacy else ("failed", "red")
+
+    status = _normalize_enum_label(row.get("agreement_status"))
+    if status == "reached":
+        return "reached", "green"
+    if status == "failed":
+        return "failed", "red"
+    if status == "ongoing":
+        return "ongoing", "blue"
+    return "unknown", "gray"
+
+
 def _build_evaluations_df() -> pd.DataFrame:
     df = st.session_state.get("evaluations_df")
     if isinstance(df, pd.DataFrame) and not df.empty:
@@ -69,7 +91,8 @@ for row in records:
     }
     series_rows.append(series_row)
 
-    if agreement_round is None and row.get("agreement_reached") is True:
+    status, _ = _agreement_status_and_color(row)
+    if agreement_round is None and status == "reached":
         agreement_round = round_id
 
 st.subheader("Records Table")
@@ -104,14 +127,8 @@ for idx, row in enumerate(records):
     with st.container(border=True):
         st.markdown(f"**Round {round_id}**")
 
-        status = row.get("agreement_reached", "Unknown")
-        if isinstance(status, bool):
-            st.badge(
-                f"Agreement reached: {status}",
-                color="green" if status else "red",
-            )
-        else:
-            st.caption(f"Agreement reached: {status}")
+        status, color = _agreement_status_and_color(row)
+        st.badge(f"Agreement status: {status}", color=color)
 
         columns = st.columns(5)
         for col_idx, (label, aliases) in enumerate(metric_aliases):
