@@ -1,3 +1,5 @@
+import json
+
 import streamlit as st
 import pandas as pd
 from langchain_anthropic import ChatAnthropic
@@ -46,12 +48,34 @@ def llm_factory(_spec):
     return ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.2)
 
 
+def _scenario_signature(payload: dict) -> str:
+    return json.dumps(payload, sort_keys=True, ensure_ascii=True)
+
+
 def get_or_create_director() -> NegotiationDirector:
     # Reuse the director in session state until the selected scenario changes.
     current_file = st.session_state.get("director_scenario_file")
-    if st.session_state.director is None or current_file != active_file:
+    current_signature = st.session_state.get("director_scenario_signature")
+    active_signature = _scenario_signature(active_payload)
+    should_recreate = (
+        st.session_state.director is None
+        or current_file != active_file
+        or current_signature != active_signature
+    )
+
+    if should_recreate:
+        had_existing_director = st.session_state.director is not None
         st.session_state.director = NegotiationDirector(active_payload, llm_factory)
         st.session_state.director_scenario_file = active_file
+        st.session_state.director_scenario_signature = active_signature
+
+        # Keep UI state aligned when scenario/rules change.
+        if had_existing_director:
+            st.session_state.history = []
+            st.session_state.round = 0
+            st.session_state.round_evaluations = []
+            st.session_state.evaluation = None
+            st.session_state.evaluations_df = pd.DataFrame()
     return st.session_state.director
 
 
