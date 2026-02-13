@@ -68,9 +68,21 @@ class NegotiationDirector:
         self.is_terminated = False
         self.termination_reason: str | None = None
 
-        # Numero massimo turni governato dal JSON (con default sicuro).
-        self.max_rounds = scenario.get("negotiation_rules", {}).get("max_rounds", 10)
-        self.mode = scenario.get("negotiation_rules", {}).get("mode", "competitive")
+        # Numero massimo turni e mode governati dalle negotiation rules.
+        rules = scenario.get("negotiation_rules", {})
+        raw_max_rounds = self._rule_value(rules, "max_rounds", 10)
+        self.max_rounds = raw_max_rounds if isinstance(raw_max_rounds, int) and raw_max_rounds > 0 else 10
+
+        raw_mode = self._rule_value(rules, "mode", "competitive")
+        self.mode = str(raw_mode).strip().lower()
+        if self.mode not in {"cooperative", "competitive", "mixed"}:
+            self.mode = "competitive"
+        self.allow_partial_agreements = bool(
+            self._rule_value(rules, "allow_partial_agreements", True)
+        )
+        self.require_unanimous_agreement = bool(
+            self._rule_value(rules, "require_unanimous_agreement", True)
+        )
 
         # Crea i runtime agenti in base all'array `agents` dello scenario.
         self.agents: list[AgentRuntime] = []
@@ -152,7 +164,11 @@ class NegotiationDirector:
             self.latest_agreement_status = status
 
         if self.latest_agreement_status == "reached":
-            self._terminate("reached", "reached")
+            if self._is_valid_reached_outcome(evaluation):
+                self._terminate("reached", "reached")
+            else:
+                # Judge says reached, but rules validation rejects closure.
+                self.latest_agreement_status = "ongoing"
             return
         if self.latest_agreement_status == "failed":
             self._terminate("failed", "failed")
@@ -160,6 +176,21 @@ class NegotiationDirector:
 
         if self.round >= self.max_rounds:
             self._terminate("stalled", "ongoing")
+
+    def _is_valid_reached_outcome(self, evaluation: dict[str, Any]) -> bool:
+        agreement_type = self._normalize_agreement_type(evaluation.get("agreement_type"))
+        unanimous = evaluation.get("unanimous")
+
+        if (
+            self.allow_partial_agreements is False
+            and agreement_type == "partial"
+        ):
+            return False
+
+        if self.require_unanimous_agreement and unanimous is not True:
+            return False
+
+        return True
 
     def _terminate(self, reason: str, status: str) -> None:
         self.is_terminated = True
@@ -203,6 +234,8 @@ class NegotiationDirector:
             "- Use exactly the metric keys found in scenario.metrics.",
             "- Keep the output concise.",
             "- Use English.",
+            '- Include "agreement_type" as one of: "none", "partial", "full".',
+            '- Include "unanimous" as boolean. Use true only if all parties explicitly confirm the final agreement.',
         ]
 
         for metric_name, metric_spec in metrics.items():
@@ -228,6 +261,8 @@ class NegotiationDirector:
                     f'"{metric_name}_top_words" that most influenced the numeric score.'
                 )
 
+        schema_lines.append('  "agreement_type": one of ["none", "partial", "full"],')
+        schema_lines.append('  "unanimous": boolean,')
         schema_lines.append('  "summary": string')
 
         schema_block = "{\n" + "\n".join(schema_lines) + "\n}"
@@ -244,6 +279,9 @@ class NegotiationDirector:
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
             "- Respect ranges if explicitly specified in the metric definition.\n"
+            "- agreement_type rules: use 'none' when there is no agreement; "
+            "'partial' when only some components are agreed; "
+            "'full' when the complete package is agreed.\n"
             "- summary must be concise and justify the scores briefly (max 50 words).\n\n"
             f"Dialogue:\n{self.history_as_text()}"
         )
@@ -295,3 +333,21 @@ class NegotiationDirector:
         if label in {"ongoing", "reached", "failed"}:
             return label
         return None
+
+    @staticmethod
+    def _normalize_agreement_type(value: Any) -> str:
+        if not isinstance(value, str):
+            return "none"
+        label = value.split(":", 1)[0].strip().lower()
+        if label in {"none", "partial", "full"}:
+            return label
+        return "none"
+
+    @staticmethod
+    def _rule_value(rules: dict[str, Any], key: str, default: Any) -> Any:
+        if not isinstance(rules, dict):
+            return default
+        raw_value = rules.get(key, default)
+        if isinstance(raw_value, dict) and "value" in raw_value:
+            return raw_value.get("value", default)
+        return raw_value

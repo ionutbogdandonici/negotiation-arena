@@ -20,8 +20,11 @@ pages = {
                 title="Dialogue Simulation",
                 icon=":material/psychology:"),
         st.Page("pages/analysis_and_metrics.py",
-                title="Analysis and Metrics",
-                icon=":material/insights:")
+                title="Preliminary Results",
+                icon=":material/insights:"),
+        st.Page("pages/verdict.py",
+                title="Verdict",
+                icon=":material/gavel:")
     ]
 }
 

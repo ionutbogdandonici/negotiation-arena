@@ -103,7 +103,7 @@ def _build_evaluations_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-st.title("Analysis and Metrics")
+st.title("Preliminary Results")
 
 evaluations_df = _build_evaluations_df()
 if evaluations_df.empty:
@@ -188,7 +188,7 @@ st.dataframe(evaluations_df, use_container_width=True)
 st.subheader("Judge Metrics Over Rounds")
 plot_df = pd.DataFrame(series_rows)
 utility_df = pd.DataFrame(utility_rows)
-trend_col, utility_col = st.columns([3, 1], gap="small")
+trend_col, utility_col = st.columns([3, 2], gap="small")
 
 with trend_col:
     metric_columns = [col for col in plot_df.columns if col != "Round"]
@@ -196,10 +196,12 @@ with trend_col:
         long_df = plot_df.melt(id_vars=["Round"], value_vars=metric_columns, var_name="Metric", value_name="Value")
         long_df = long_df.dropna(subset=["Value"])
         if not long_df.empty:
-            trend_fig = px.line(long_df, x="Round", y="Value", color="Metric", markers=True)
+            trend_fig = px.line(long_df, x="Round", y="Value", color="Metric")
             trend_fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
             trend_fig.update_yaxes(range=[0, 10])
-            st.plotly_chart(trend_fig, use_container_width=True)
+            trend_fig.update_traces(line={"width": 3})
+            trend_fig.update_legends(title_text="Metrics", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
+            st.plotly_chart(trend_fig, width="stretch")
         else:
             st.caption("No numeric metric values available yet.")
     else:
@@ -219,59 +221,57 @@ with utility_col:
             color_discrete_map={"Positive": "#2E8B57", "Negative": "#B22222"},
         )
         utility_fig.update_layout(
-            showlegend=False,
-            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=True,
         )
+        utility_fig.update_traces(line={"width": 5})
+        utility_fig.update_legends(title_text="Utility", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
         utility_fig.update_yaxes(range=[-20, 30])
-        st.plotly_chart(utility_fig, use_container_width=True)
+        st.plotly_chart(utility_fig, width="stretch")
     else:
         st.caption("Utility total unavailable.")
 
-st.subheader("Rounds to Agreement")
-if agreement_round is None:
-    st.metric("Rounds to Agreement", "Not reached")
-else:
-    st.metric("Rounds to Agreement", agreement_round)
 
 st.subheader("Judge Report by Iteration")
 metric_aliases = [(_metric_label(metric_name), _metric_aliases(metric_name)) for metric_name in numeric_metric_names]
 
-for idx, row in enumerate(records):
-    prev_row = records[idx - 1] if idx > 0 else {}
-    round_id = row.get("round")
+report_details = st.expander("Details for each round", expanded=False)
+with report_details:
+    for idx, row in enumerate(records):
+        prev_row = records[idx - 1] if idx > 0 else {}
+        round_id = row.get("round")
 
-    with st.container(border=True):
-        st.markdown(f"**Round {round_id}**")
+        with st.container(border=True):
+            st.markdown(f"**Round {round_id}**")
 
-        status, color = _agreement_status_and_color(row)
-        st.badge(f"Agreement status: {status}", color=color)
+            status, color = _agreement_status_and_color(row)
+            st.badge(f"Agreement status: {status}", color=color)
 
-        columns = st.columns(5)
-        for col_idx, (label, aliases) in enumerate(metric_aliases):
-            current_value = _coalesce_numeric(row, aliases)
-            previous_value = _coalesce_numeric(prev_row, aliases)
-            delta = None
-            if current_value is not None and previous_value is not None:
-                delta = current_value - previous_value
+            columns = st.columns(5)
+            for col_idx, (label, aliases) in enumerate(metric_aliases):
+                current_value = _coalesce_numeric(row, aliases)
+                previous_value = _coalesce_numeric(prev_row, aliases)
+                delta = None
+                if current_value is not None and previous_value is not None:
+                    delta = current_value - previous_value
 
-            with columns[col_idx]:
-                st.metric(
-                    label=label,
-                    value=current_value if current_value is not None else "N/A",
-                    delta=delta,
-                )
+                with columns[col_idx]:
+                    st.metric(
+                        label=label,
+                        value=current_value if current_value is not None else "N/A",
+                        delta=delta,
+                    )
 
-        summary = row.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            st.write(f"Summary: {summary}")
+            summary = row.get("summary")
+            if isinstance(summary, str) and summary.strip():
+                st.write(f"Summary: {summary}")
 
-        round_item = round_items.get(round_id, {})
-        turn_messages = round_item.get("turn_messages", [])
-        with st.expander("Conversation"):
-            if turn_messages:
-                for msg in turn_messages:
-                    speaker = msg.get("agent", "Agent")
-                    content = msg.get("content", "")
-                    st.markdown(f"**{speaker}:** {content}")
-            else:
-                st.caption("No conversation details available for this round.")
+            round_item = round_items.get(round_id, {})
+            turn_messages = round_item.get("turn_messages", [])
+            with st.expander("Conversation"):
+                if turn_messages:
+                    for msg in turn_messages:
+                        speaker = msg.get("agent", "Agent")
+                        content = msg.get("content", "")
+                        st.markdown(f"**{speaker}:** {content}")
+                else:
+                    st.caption("No conversation details available for this round.")

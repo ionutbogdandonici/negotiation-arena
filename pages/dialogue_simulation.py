@@ -5,6 +5,7 @@ import pandas as pd
 from langchain_anthropic import ChatAnthropic
 
 from core.director import NegotiationDirector
+from negotiation_rules_state import get_active_rules
 from scenario_state import get_active_scenario
 
 if "history" not in st.session_state:
@@ -42,6 +43,9 @@ if not isinstance(active_payload, dict):
     st.warning("Select a scenario from Home before starting the dialogue.")
     st.stop()
 
+active_rules = get_active_rules()
+director_payload = {**active_payload, "negotiation_rules": dict(active_rules)}
+
 
 # Factory for model instances; customize this per agent if needed.
 def llm_factory(_spec):
@@ -56,7 +60,7 @@ def get_or_create_director() -> NegotiationDirector:
     # Reuse the director in session state until the selected scenario changes.
     current_file = st.session_state.get("director_scenario_file")
     current_signature = st.session_state.get("director_scenario_signature")
-    active_signature = _scenario_signature(active_payload)
+    active_signature = _scenario_signature(director_payload)
     should_recreate = (
         st.session_state.director is None
         or current_file != active_file
@@ -65,7 +69,7 @@ def get_or_create_director() -> NegotiationDirector:
 
     if should_recreate:
         had_existing_director = st.session_state.director is not None
-        st.session_state.director = NegotiationDirector(active_payload, llm_factory)
+        st.session_state.director = NegotiationDirector(director_payload, llm_factory)
         st.session_state.director_scenario_file = active_file
         st.session_state.director_scenario_signature = active_signature
 
@@ -111,6 +115,16 @@ def advance_round_and_evaluate():
         [st.session_state.evaluations_df, pd.DataFrame([row])],
         ignore_index=True,
     )
+
+
+def advance_until_end() -> int:
+    rounds_executed = 0
+    director = get_or_create_director()
+    while director.can_advance():
+        advance_round_and_evaluate()
+        rounds_executed += 1
+        director = get_or_create_director()
+    return rounds_executed
 
 
 def _build_evaluation_row(round_id: int, evaluation: dict) -> dict:
@@ -233,13 +247,13 @@ def reset_dialogue():
 director = get_or_create_director()
 can_advance_conversation = director.can_advance()
 
-col1, col2, col3, col4 = st.columns([3, 3, 2, 2], vertical_alignment="bottom")
+col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 2], vertical_alignment="bottom")
 with col1:
     scenario = st.selectbox("Scenario Design", [active_scenario_name], disabled=True)
 with col2:
     mode = st.selectbox(
         "Mode",
-        [active_payload.get("negotiation_rules", {}).get("mode", "competitive").capitalize()],
+        [str(active_rules.get("mode", "competitive")).capitalize()],
         disabled=True,
     )
 with col3:
@@ -249,6 +263,11 @@ with col3:
 with col4:
     if st.button("Reset", width="stretch"):
         reset_dialogue()
+with col5:
+    if st.button("Advance Until End", width="stretch", disabled=not can_advance_conversation):
+        with st.spinner("Running conversation until termination..."):
+            completed_rounds = advance_until_end()
+        st.info(f"Auto-advanced {completed_rounds} round(s).")
 
 st.caption(f"Scenario in use: {scenario}")
 st.caption(f"Rounds completed: {st.session_state.round}")
