@@ -78,6 +78,22 @@ def _utility_sign(metric_spec: dict) -> int:
     return 1
 
 
+def _round_messages_text(round_item: dict) -> str:
+    turn_messages = round_item.get("turn_messages", []) if isinstance(round_item, dict) else []
+    if not isinstance(turn_messages, list):
+        return ""
+
+    lines = []
+    for msg in turn_messages[:2]:
+        if not isinstance(msg, dict):
+            continue
+        speaker = str(msg.get("agent", "Agent")).strip()
+        content = str(msg.get("content", "")).strip()
+        if content:
+            lines.append(f"{speaker}: {content}")
+    return "\n".join(lines)
+
+
 def _build_evaluations_df() -> pd.DataFrame:
     df = st.session_state.get("evaluations_df")
     if isinstance(df, pd.DataFrame) and not df.empty:
@@ -114,12 +130,16 @@ if "round" not in evaluations_df.columns:
     evaluations_df["round"] = range(1, len(evaluations_df) + 1)
 
 evaluations_df = evaluations_df.sort_values("round").reset_index(drop=True)
-records = evaluations_df.to_dict(orient="records")
 round_items = {
     item.get("round"): item
     for item in st.session_state.get("round_evaluations", [])
     if isinstance(item, dict)
 }
+evaluations_df["messages"] = evaluations_df["round"].apply(
+    lambda round_id: _round_messages_text(round_items.get(round_id, {}))
+)
+evaluations_df = evaluations_df.drop(columns=["unanimous", "agreement_type"], errors="ignore")
+records = evaluations_df.to_dict(orient="records")
 active_file, active_payload = get_active_scenario()
 if not isinstance(active_payload, dict):
     scenario_files = list_scenario_files()
