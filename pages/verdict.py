@@ -41,9 +41,27 @@ def _utility_sign(metric_spec: dict) -> int:
 
 st.title("Verdict")
 
+active_file, active_payload = get_active_scenario()
+final_evaluation = st.session_state.get("final_evaluation")
+final_evaluation_meta = st.session_state.get("final_evaluation_meta")
+final_matches_active_scenario = (
+    isinstance(final_evaluation_meta, dict)
+    and final_evaluation_meta.get("scenario_file") == active_file
+)
+final_ready = (
+    isinstance(final_evaluation, dict)
+    and final_evaluation
+    and final_matches_active_scenario
+)
+if not final_ready:
+    st.info(
+        "Final verdict not available yet. The final judge runs only after the negotiation is terminated."
+    )
+    st.stop()
+
 evaluations_df = st.session_state.get("evaluations_df")
 if not isinstance(evaluations_df, pd.DataFrame) or evaluations_df.empty:
-    st.info("No judge data yet. Run at least one round in Dialogue Simulation.")
+    st.info("No round data available to build verdict charts.")
     st.stop()
 
 if "round" not in evaluations_df.columns:
@@ -53,7 +71,6 @@ if "round" not in evaluations_df.columns:
 evaluations_df = evaluations_df.sort_values("round").reset_index(drop=True)
 records = evaluations_df.to_dict(orient="records")
 
-_, active_payload = get_active_scenario()
 metrics = active_payload.get("metrics", {}) if isinstance(active_payload, dict) else {}
 numeric_metric_names = [
     metric_name
@@ -99,25 +116,26 @@ fig.update_yaxes(range=[-20, 30])
 st.plotly_chart(fig, width="stretch")
 
 st.subheader("Outcome Explanation")
-latest_row = records[-1] if records else {}
+verdict_row = final_evaluation
+st.caption("Using final judge evaluation.")
 
 diag_cols = st.columns(4)
 diagnostic_metrics = ["persuasion", "deception", "concession", "cooperation"]
 for index, metric_name in enumerate(diagnostic_metrics):
-    metric_value = _to_int(latest_row.get(metric_name))
+    metric_value = _to_int(verdict_row.get(metric_name))
     with diag_cols[index]:
         st.metric(
             metric_name.title(),
             metric_value if metric_value is not None else "N/A",
         )
 
-interaction_pattern = _first_non_empty(latest_row.get("interaction_pattern"))
-dominant_agent = _first_non_empty(latest_row.get("dominant_agent"))
-dominance_method = _first_non_empty(latest_row.get("dominance_method"))
-could_do_better = _first_non_empty(latest_row.get("could_do_better"))
+interaction_pattern = _first_non_empty(verdict_row.get("interaction_pattern"))
+dominant_agent = _first_non_empty(verdict_row.get("dominant_agent"))
+dominance_method = _first_non_empty(verdict_row.get("dominance_method"))
+could_do_better = _first_non_empty(verdict_row.get("could_do_better"))
 outcome_explanation = _first_non_empty(
-    latest_row.get("outcome_explanation"),
-    latest_row.get("summary"),
+    verdict_row.get("outcome_explanation"),
+    verdict_row.get("summary"),
 )
 
 if interaction_pattern:

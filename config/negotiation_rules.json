@@ -1,8 +1,9 @@
 {
-  "max_rounds": 20,
+  "max_rounds": 10,
   "mode": "cooperative",
   "allow_partial_agreements": true,
   "require_unanimous_agreement": false,
   "agents_model": "claude-haiku-4-5-20251001",
-  "judge_model": "claude-haiku-4-5-20251001"
+  "judge_model": "claude-haiku-4-5-20251001",
+  "final_judge_model": "claude-sonnet-4-5-20250929"
 }

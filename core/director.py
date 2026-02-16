@@ -222,7 +222,7 @@ class NegotiationDirector:
 
     
 
-    def evaluate(self, judge_llm: Any) -> dict[str, Any]:
+    def evaluate(self, judge_llm: Any, scope: str = "round") -> dict[str, Any]:
         """
         Evaluate the negotiation with a second model.
         Return parseable JSON; if invalid, include the raw output.
@@ -276,15 +276,26 @@ class NegotiationDirector:
 
         schema_block = "{\n" + "\n".join(schema_lines) + "\n}"
         metrics_json = json.dumps(metrics, ensure_ascii=True)
+        evaluation_scope = "final" if str(scope).strip().lower() == "final" else "round"
+        scope_instruction = (
+            "- This is the FINAL evaluation. Assess the whole negotiation trajectory and the final outcome.\n"
+            if evaluation_scope == "final"
+            else "- This is a ROUND evaluation. Focus on the latest round while keeping full context.\n"
+        )
+        current_status = self.latest_agreement_status
+
         prompt = (
             "You are a neutral evaluator of a negotiation dialogue.\n"
             "Use the metrics definition provided by the scenario and evaluate the dialogue accordingly.\n\n"
+            f"Evaluation scope: {evaluation_scope}\n"
+            f"Current negotiation status: {current_status}\n\n"
             f"Scenario metrics:\n{metrics_json}\n\n"
             "Output a SINGLE JSON object that strictly follows this schema:\n\n"
             f"{schema_block}\n\n"
             "Rules:\n"
             + "\n".join(rules_lines)
             + "\n\n"
+            f"{scope_instruction}\n"
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
             "- persuasion, deception, concession, cooperation must be in range 0..10.\n"

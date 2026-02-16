@@ -13,6 +13,7 @@ DEFAULT_RULES = {
     "require_unanimous_agreement": True,
     "agents_model": "claude-sonnet-4-5-20250929",
     "judge_model": "claude-sonnet-4-5-20250929",
+    "final_judge_model": "claude-sonnet-4-5-20250929",
 }
 MODE_OPTIONS = {"cooperative", "competitive", "mixed"}
 
@@ -40,6 +41,9 @@ def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
     judge_model = str(
         _read_rule_value(raw_rules.get("judge_model"), DEFAULT_RULES["judge_model"])
     ).strip()
+    final_judge_model = str(
+        _read_rule_value(raw_rules.get("final_judge_model"), judge_model or DEFAULT_RULES["final_judge_model"])
+    ).strip()
 
     if not isinstance(max_rounds, int) or max_rounds < 1:
         max_rounds = DEFAULT_RULES["max_rounds"]
@@ -49,6 +53,8 @@ def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
         agents_model = DEFAULT_RULES["agents_model"]
     if not judge_model:
         judge_model = DEFAULT_RULES["judge_model"]
+    if not final_judge_model:
+        final_judge_model = judge_model
 
     return {
         "max_rounds": int(max_rounds),
@@ -57,6 +63,7 @@ def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
         "require_unanimous_agreement": bool(require_unanimous),
         "agents_model": agents_model,
         "judge_model": judge_model,
+        "final_judge_model": final_judge_model,
     }
 
 

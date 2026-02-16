@@ -20,6 +20,10 @@ if "evaluation" not in st.session_state:
     st.session_state.evaluation = None
 if "evaluations_df" not in st.session_state:
     st.session_state.evaluations_df = pd.DataFrame()
+if "final_evaluation" not in st.session_state:
+    st.session_state.final_evaluation = None
+if "final_evaluation_meta" not in st.session_state:
+    st.session_state.final_evaluation_meta = None
 
 st.title("Dialogue Simulation")
 
@@ -36,11 +40,16 @@ if not isinstance(active_payload, dict):
 active_rules = get_active_rules()
 director_payload = {**active_payload, "negotiation_rules": dict(active_rules)}
 agents_model_name = str(active_rules.get("agents_model", "claude-sonnet-4-5-20250929")).strip()
-judge_model_name = str(active_rules.get("judge_model", "claude-sonnet-4-5-20250929")).strip()
+round_judge_model_name = str(active_rules.get("judge_model", "claude-sonnet-4-5-20250929")).strip()
+final_judge_model_name = str(
+    active_rules.get("final_judge_model", round_judge_model_name or "claude-sonnet-4-5-20250929")
+).strip()
 if not agents_model_name:
     agents_model_name = "claude-sonnet-4-5-20250929"
-if not judge_model_name:
-    judge_model_name = "claude-sonnet-4-5-20250929"
+if not round_judge_model_name:
+    round_judge_model_name = "claude-sonnet-4-5-20250929"
+if not final_judge_model_name:
+    final_judge_model_name = round_judge_model_name
 
 
 # Factory for model instances; customize this per agent if needed.
@@ -76,6 +85,8 @@ def get_or_create_director() -> NegotiationDirector:
             st.session_state.round_evaluations = []
             st.session_state.evaluation = None
             st.session_state.evaluations_df = pd.DataFrame()
+            st.session_state.final_evaluation = None
+            st.session_state.final_evaluation_meta = None
     return st.session_state.director
 
 
@@ -92,8 +103,8 @@ def advance_round_and_evaluate():
 
     turn_messages = director.step(input_message)
 
-    judge_llm = ChatAnthropic(model=judge_model_name, temperature=0.1)
-    evaluation = director.evaluate(judge_llm)
+    judge_llm = ChatAnthropic(model=round_judge_model_name, temperature=0.1)
+    evaluation = director.evaluate(judge_llm, scope="round")
     director.register_evaluation(evaluation)
 
     st.session_state.history = director.get_history()
@@ -111,6 +122,7 @@ def advance_round_and_evaluate():
         [st.session_state.evaluations_df, pd.DataFrame([row])],
         ignore_index=True,
     )
+    _maybe_run_final_evaluation(director)
 
 
 def advance_until_end() -> int:
@@ -133,6 +145,25 @@ def _build_evaluation_row(round_id: int, evaluation: dict) -> dict:
         else:
             row[key] = value
     return row
+
+
+def _maybe_run_final_evaluation(director: NegotiationDirector) -> None:
+    if not director.is_terminated:
+        return
+
+    meta = {
+        "scenario_file": active_file,
+        "round": director.round,
+        "termination_reason": director.termination_reason,
+        "history_len": len(director.get_history()),
+    }
+    if st.session_state.get("final_evaluation_meta") == meta:
+        return
+
+    final_judge_llm = ChatAnthropic(model=final_judge_model_name, temperature=0.1)
+    final_evaluation = director.evaluate(final_judge_llm, scope="final")
+    st.session_state.final_evaluation = final_evaluation
+    st.session_state.final_evaluation_meta = meta
 
 
 def _to_int(value):
@@ -238,49 +269,62 @@ def reset_dialogue():
     st.session_state.evaluation = None
     st.session_state.round_evaluations = []
     st.session_state.evaluations_df = pd.DataFrame()
+    st.session_state.final_evaluation = None
+    st.session_state.final_evaluation_meta = None
 
 
 director = get_or_create_director()
 can_advance_conversation = director.can_advance()
+_maybe_run_final_evaluation(director)
 
-col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 2], vertical_alignment="bottom")
+with st.expander("Configuration & Status", expanded=False):
+    col_a, col_b, col_c = st.columns(3)
+
+    with col_a:
+        st.markdown("### Configuration")
+        st.write(f"**Scenario**: {active_scenario_name}")
+        st.write(f"**Mode**: {str(active_rules.get('mode', 'competitive')).capitalize()}")
+
+    with col_b:
+        st.markdown("### Progress")
+        st.write(f"**Rounds completed**: {st.session_state.round}")
+        st.write(f"**Max rounds**: {director.max_rounds}")
+
+        if director.is_terminated:
+            st.write("")
+            if director.termination_reason == "reached":
+                st.success("Agreement reached")
+            elif director.termination_reason == "failed":
+                st.error("Agreement failed")
+            elif director.termination_reason == "stalled":
+                st.warning("Stalled (max rounds)")
+
+    with col_c:
+        st.markdown("### Models")
+        st.write(f"**Agents**: {agents_model_name}")
+        st.write(f"**Round judge**: {round_judge_model_name}")
+        st.write(f"**Final judge**: {final_judge_model_name}")
+
+col1, col2, col3 = st.columns([2, 2, 2], vertical_alignment="bottom")
 with col1:
-    scenario = st.selectbox("Scenario Design", [active_scenario_name], disabled=True)
-with col2:
-    mode = st.selectbox(
-        "Mode",
-        [str(active_rules.get("mode", "competitive")).capitalize()],
-        disabled=True,
-    )
-with col3:
     if st.button("Advance Conversation", width="stretch", disabled=not can_advance_conversation):
         with st.spinner("Running round and evaluating..."):
             advance_round_and_evaluate()
-with col4:
+with col2:
     if st.button("Reset", width="stretch"):
         reset_dialogue()
-with col5:
+with col3:
     if st.button("Advance Until End", width="stretch", disabled=not can_advance_conversation):
         with st.spinner("Running conversation until termination..."):
             completed_rounds = advance_until_end()
         st.info(f"Auto-advanced {completed_rounds} round(s).")
 
-st.caption(f"Scenario in use: {scenario}")
-st.caption(f"Rounds completed: {st.session_state.round}")
-st.caption(f"Max rounds: {director.max_rounds}")
-st.caption(f"Agents model: {agents_model_name}")
-st.caption(f"Judge model: {judge_model_name}")
-if director.is_terminated:
-    if director.termination_reason == "reached":
-        st.success("Negotiation ended: agreement reached.")
-    elif director.termination_reason == "failed":
-        st.error("Negotiation ended: agreement failed.")
-    elif director.termination_reason == "stalled":
-        st.warning("Negotiation ended: stalled after reaching the maximum number of rounds.")
+if director.is_terminated and isinstance(st.session_state.get("final_evaluation"), dict):
+    st.success("Final judge evaluation is available in the Verdict page.")
 
 st.subheader("Round by Round")
 if not st.session_state.round_evaluations:
-    st.caption("No dialogue yet. Click 'Advance Conversation' to run the first round of negotiation.")
+    st.info("No dialogue yet. Click 'Advance Conversation' to run the first round of negotiation.")
 else:
     metric_specs = active_payload.get("metrics", {})
     for idx, item in enumerate(st.session_state.round_evaluations):

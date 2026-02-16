@@ -24,6 +24,7 @@ allow_partial_value = rules.get("allow_partial_agreements", True)
 require_unanimous_value = rules.get("require_unanimous_agreement", True)
 agents_model_value = str(rules.get("agents_model", model_options[1])).strip()
 judge_model_value = str(rules.get("judge_model", model_options[1])).strip()
+final_judge_model_value = str(rules.get("final_judge_model", judge_model_value or model_options[1])).strip()
 
 if mode_value not in mode_options:
     mode_value = "competitive"
@@ -58,7 +59,7 @@ with layout_col_left:
     )
     st.caption("Require all parties to explicitly agree before closing the negotiation.")
 
-    second_row_left, second_row_right = st.columns([1, 1])
+    second_row_left, second_row_center, second_row_right = st.columns([1, 1, 1])
     with second_row_left:
         agents_model = st.selectbox(
             "Agents Model",
@@ -67,15 +68,27 @@ with layout_col_left:
             if agents_model_value in model_options
             else 1,
         )
-    with second_row_right:
+    with second_row_center:
         judge_model = st.selectbox(
-            "Judge Model",
+            "Round Judge Model",
             model_options,
             index=model_options.index(judge_model_value)
             if judge_model_value in model_options
             else 1,
         )
-    st.caption("Select model for scenario agents and for the judge.")
+    with second_row_right:
+        final_judge_model = st.selectbox(
+            "Final Judge Model",
+            model_options,
+            index=model_options.index(final_judge_model_value)
+            if final_judge_model_value in model_options
+            else (
+                model_options.index(judge_model)
+                if judge_model in model_options
+                else 1
+            ),
+        )
+    st.caption("Select model for scenario agents, round judge, and final judge.")
 
 updated_rules = {
     "max_rounds": int(max_rounds),
@@ -84,6 +97,7 @@ updated_rules = {
     "require_unanimous_agreement": bool(require_unanimous_agreement),
     "agents_model": str(agents_model).strip(),
     "judge_model": str(judge_model).strip(),
+    "final_judge_model": str(final_judge_model).strip(),
 }
 
 if updated_rules != rules:
