@@ -18,7 +18,6 @@ class AgentSpec:
     objective: str
     resources: dict[str, Any]
     constraints: list[str]
-    utility_function: dict[str, float]
     private_goals: dict[str, Any]
 
 
@@ -37,19 +36,20 @@ class AgentRuntime:
                 "objective": spec.objective,
                 "resources": spec.resources,
                 "constraints": spec.constraints,
-                "utility_function": spec.utility_function,
                 "private_goals": spec.private_goals,
             },
             scenario_context=scenario_context,
         )
 
         # Template minimale: system fisso + input umano variabile ad ogni turno.
+        # Keep system prompt as a literal value so braces in scenario data
+        # (e.g. dict-like text) are not interpreted as template variables.
         self.chain = ChatPromptTemplate.from_messages(
             [
-                ("system", system_prompt),
+                ("system", "{system_prompt}"),
                 ("human", "{message}"),
             ]
-        ) | llm
+        ).partial(system_prompt=system_prompt) | llm
 
     def reply(self, message: str) -> str:
         # Esegue un singolo turno dell'agente e normalizza il testo di output.
@@ -95,7 +95,6 @@ class NegotiationDirector:
                 objective=raw_agent.get("objective", ""),
                 resources=raw_agent.get("resources", {}),
                 constraints=raw_agent.get("constraints", []),
-                utility_function=raw_agent.get("utility_function", {}),
                 private_goals=raw_agent.get("private_goals", {}),
             )
             self.agents.append(
@@ -163,12 +162,9 @@ class NegotiationDirector:
         if status is not None:
             self.latest_agreement_status = status
 
+        # Terminate as soon as the judge marks a terminal status.
         if self.latest_agreement_status == "reached":
-            if self._is_valid_reached_outcome(evaluation):
-                self._terminate("reached", "reached")
-            else:
-                # Judge says reached, but rules validation rejects closure.
-                self.latest_agreement_status = "ongoing"
+            self._terminate("reached", "reached")
             return
         if self.latest_agreement_status == "failed":
             self._terminate("failed", "failed")
@@ -207,6 +203,10 @@ class NegotiationDirector:
         legacy = evaluation.get("agreement_reached")
         if isinstance(legacy, bool):
             return "reached" if legacy else "failed"
+        raw_output = evaluation.get("raw")
+        normalized_from_raw = NegotiationDirector._normalize_agreement_status(raw_output)
+        if normalized_from_raw is not None:
+            return normalized_from_raw
         return None
 
     def get_history(self) -> list[dict[str, str]]:
@@ -227,13 +227,35 @@ class NegotiationDirector:
         Evaluate the negotiation with a second model.
         Return parseable JSON; if invalid, include the raw output.
         """
+        prompt = self.build_judge_prompt(scope=scope)
+
+        response = judge_llm.invoke(prompt)
+        raw_content = getattr(response, "content", str(response))
+        cleaned = self._strip_code_fences(raw_content)
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            return {"error": "judge_output_not_json", "raw": raw_content}
+
+    def build_judge_prompt(self, scope: str = "round") -> str:
+        evaluation_scope = "final" if str(scope).strip().lower() == "final" else "round"
         metrics = self.scenario.get("metrics", {})
+        metrics_json = json.dumps(metrics, ensure_ascii=True)
+        schema_block, rules_lines = self._judge_schema_and_rules(metrics)
+
+        if evaluation_scope == "final":
+            return self._build_final_judge_prompt(metrics_json, schema_block, rules_lines)
+        return self._build_round_judge_prompt(metrics_json, schema_block, rules_lines)
+
+    def _judge_schema_and_rules(self, metrics: dict[str, Any]) -> tuple[str, list[str]]:
         schema_lines = []
         rules_lines = [
             "- Output ONLY the JSON object, no explanations, no markdown.",
             "- Include all metric keys found in scenario.metrics plus the mandatory diagnostics keys listed in the schema.",
             "- Keep the output concise.",
             "- Use English.",
+            '- Include "agreement_status" as one of: "ongoing", "reached", "failed".',
             '- Include "agreement_type" as one of: "none", "partial", "full".',
             '- Include "unanimous" as boolean. Use true only if all parties explicitly confirm the final agreement.',
         ]
@@ -261,6 +283,8 @@ class NegotiationDirector:
                     f'"{metric_name}_top_words" that most influenced the numeric score.'
                 )
 
+        if "agreement_status" not in metrics:
+            schema_lines.append('  "agreement_status": one of ["ongoing", "reached", "failed"],')
         schema_lines.append('  "agreement_type": one of ["none", "partial", "full"],')
         schema_lines.append('  "unanimous": boolean,')
         schema_lines.append('  "persuasion": integer (0-10),')
@@ -273,33 +297,36 @@ class NegotiationDirector:
         schema_lines.append('  "could_do_better": string,')
         schema_lines.append('  "outcome_explanation": string,')
         schema_lines.append('  "summary": string')
+        return "{\n" + "\n".join(schema_lines) + "\n}", rules_lines
 
-        schema_block = "{\n" + "\n".join(schema_lines) + "\n}"
-        metrics_json = json.dumps(metrics, ensure_ascii=True)
-        evaluation_scope = "final" if str(scope).strip().lower() == "final" else "round"
-        scope_instruction = (
-            "- This is the FINAL evaluation. Assess the whole negotiation trajectory and the final outcome.\n"
-            if evaluation_scope == "final"
-            else "- This is a ROUND evaluation. Focus on the latest round while keeping full context.\n"
-        )
-        current_status = self.latest_agreement_status
-
-        prompt = (
-            "You are a neutral evaluator of a negotiation dialogue.\n"
-            "Use the metrics definition provided by the scenario and evaluate the dialogue accordingly.\n\n"
-            f"Evaluation scope: {evaluation_scope}\n"
-            f"Current negotiation status: {current_status}\n\n"
+    def _build_round_judge_prompt(
+        self,
+        metrics_json: str,
+        schema_block: str,
+        rules_lines: list[str],
+    ) -> str:
+        return (
+            "You are the ROUND_JUDGE, a neutral evaluator of a negotiation dialogue.\n"
+            "Evaluate the latest round while keeping full context from earlier rounds.\n\n"
+            "Evaluation scope: round\n"
+            f"Current negotiation status: {self.latest_agreement_status}\n\n"
             f"Scenario metrics:\n{metrics_json}\n\n"
             "Output a SINGLE JSON object that strictly follows this schema:\n\n"
             f"{schema_block}\n\n"
             "Rules:\n"
             + "\n".join(rules_lines)
             + "\n\n"
-            f"{scope_instruction}\n"
+            "Scope-specific constraints (round judge):\n"
+            "- Focus primarily on the newest round evidence.\n"
+            "- Keep consistency with prior context, but do not summarize the whole run as a final verdict.\n"
+            "- Set agreement_status to reached/failed only with clear dialogue evidence.\n\n"
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
             "- persuasion, deception, concession, cooperation must be in range 0..10.\n"
             "- Respect ranges if explicitly specified in the metric definition.\n"
+            "- agreement_status rules: use 'ongoing' while the negotiation is still active; "
+            "'reached' when parties clearly converged on a deal; "
+            "'failed' when they are at impasse or explicitly reject continuation.\n"
             "- agreement_type rules: use 'none' when there is no agreement; "
             "'partial' when only some components are agreed; "
             "'full' when the complete package is agreed.\n"
@@ -313,14 +340,46 @@ class NegotiationDirector:
             f"Dialogue:\n{self.history_as_text()}"
         )
 
-        response = judge_llm.invoke(prompt)
-        raw_content = getattr(response, "content", str(response))
-        cleaned = self._strip_code_fences(raw_content)
-
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            return {"error": "judge_output_not_json", "raw": raw_content}
+    def _build_final_judge_prompt(
+        self,
+        metrics_json: str,
+        schema_block: str,
+        rules_lines: list[str],
+    ) -> str:
+        return (
+            "You are the FINAL_JUDGE, a neutral evaluator of a negotiation dialogue.\n"
+            "Assess the whole trajectory and produce the final verdict.\n\n"
+            "Evaluation scope: final\n"
+            f"Current negotiation status: {self.latest_agreement_status}\n\n"
+            f"Scenario metrics:\n{metrics_json}\n\n"
+            "Output a SINGLE JSON object that strictly follows this schema:\n\n"
+            f"{schema_block}\n\n"
+            "Rules:\n"
+            + "\n".join(rules_lines)
+            + "\n\n"
+            "Scope-specific constraints (final judge):\n"
+            "- Evaluate the complete conversation from start to finish.\n"
+            "- Resolve inconsistencies across rounds and produce one coherent terminal assessment.\n"
+            "- Your agreement_status must represent the final outcome.\n\n"
+            "Scoring constraints:\n"
+            "- All numeric values must be integers.\n"
+            "- persuasion, deception, concession, cooperation must be in range 0..10.\n"
+            "- Respect ranges if explicitly specified in the metric definition.\n"
+            "- agreement_status rules: use 'ongoing' while the negotiation is still active; "
+            "'reached' when parties clearly converged on a deal; "
+            "'failed' when they are at impasse or explicitly reject continuation.\n"
+            "- agreement_type rules: use 'none' when there is no agreement; "
+            "'partial' when only some components are agreed; "
+            "'full' when the complete package is agreed.\n"
+            "- interaction_pattern: use 'scripted' when repetitive template behavior dominates; "
+            "'adaptive' when clear strategy updates appear across rounds; "
+            "'mixed' when both are present.\n"
+            "- dominant_agent must be one exact speaker name from the dialogue or 'none'.\n"
+            "- dominance_method and could_do_better must be concrete and evidence-based.\n"
+            "- outcome_explanation must explain why the current status (ongoing/reached/failed) happened.\n"
+            "- summary must be concise and justify the scores briefly (max 50 words).\n\n"
+            f"Dialogue:\n{self.history_as_text()}"
+        )
 
     @staticmethod
     def _is_terminal_message(message: str) -> bool:
@@ -356,9 +415,18 @@ class NegotiationDirector:
         if not isinstance(value, str):
             return None
 
-        label = value.split(":", 1)[0].strip().lower()
+        label = value.strip().lower()
         if label in {"ongoing", "reached", "failed"}:
             return label
+        prefix = label.split(":", 1)[0].strip()
+        if prefix in {"ongoing", "reached", "failed"}:
+            return prefix
+        if re.search(r"\bongoing\b", label):
+            return "ongoing"
+        if re.search(r"\breached\b", label):
+            return "reached"
+        if re.search(r"\bfailed\b", label):
+            return "failed"
         return None
 
     @staticmethod

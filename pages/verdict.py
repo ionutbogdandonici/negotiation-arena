@@ -118,11 +118,28 @@ st.plotly_chart(fig, width="stretch")
 st.subheader("Outcome Explanation")
 verdict_row = final_evaluation
 st.caption("Using final judge evaluation.")
+st.caption(
+    "Metric guide: persuasion (0-10) = ability to influence with arguments; "
+    "deception (0-10) = use of misleading/manipulative tactics; "
+    "concession (0-10) = willingness to make trade-offs; "
+    "cooperation (0-10) = collaborative, solution-oriented behavior; "
+    "agreement_type = none/partial/full; "
+    "unanimous = whether all parties explicitly confirmed the agreement; "
+    "interaction_pattern = scripted/adaptive/mixed."
+)
+latest_row = records[-1] if records else {}
+
+
+def _diagnostic_metric(metric_name: str):
+    final_value = _to_int(verdict_row.get(metric_name))
+    if final_value is not None:
+        return final_value
+    return _to_int(latest_row.get(metric_name))
 
 diag_cols = st.columns(4)
 diagnostic_metrics = ["persuasion", "deception", "concession", "cooperation"]
 for index, metric_name in enumerate(diagnostic_metrics):
-    metric_value = _to_int(verdict_row.get(metric_name))
+    metric_value = _diagnostic_metric(metric_name)
     with diag_cols[index]:
         st.metric(
             metric_name.title(),

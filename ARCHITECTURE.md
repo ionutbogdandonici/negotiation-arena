@@ -54,7 +54,7 @@ A scenario contains at least:
 
 Fields used by agents in prompts:
 
-- Per agent: `name`, `role`, `public_description`, `objective`, `resources`, `constraints`, `utility_function`, `private_goals`
+- Per agent: `name`, `role`, `public_description`, `objective`, `resources`, `constraints`, `private_goals`
 - Shared context: `description`, `resources_to_negotiate`
 
 Fields used by judges:
@@ -164,9 +164,7 @@ Main runtime keys:
 
 - `register_evaluation(evaluation)`:
   - extracts `agreement_status`
-  - if `reached`: validates against rules:
-    - rejects partial agreement when `allow_partial_agreements=False`
-    - requires `unanimous=True` when `require_unanimous_agreement=True`
+  - if `reached`: terminates
   - if `failed`: terminates
   - if max rounds reached: terminates as `stalled`
 
@@ -272,6 +270,6 @@ Actual composition logic:
 
 ## 9) Operational Notes and Current Limits
 
-- `utils.py` builds prompts using direct field access in some places (for example `resources["description"]`, `private_goals["min_equity_percent"]`), so incomplete scenario schemas may raise runtime errors.
+- `utils.py` is now resilient to missing optional fields and falls back to safe defaults for prompt sections.
 - `Verdict` intentionally blocks until final evaluation exists for the active scenario.
 - Utility charts are computed from numeric round metrics; final narrative explanation comes from the final judge output.
