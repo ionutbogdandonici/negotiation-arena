@@ -35,6 +35,3 @@ if active_payload is None:
         st.stop()
 
 st.success(f"Active scenario: {active_file}")
-
-with st.expander("Scenario preview"):
-    st.json(active_payload, expanded=False)

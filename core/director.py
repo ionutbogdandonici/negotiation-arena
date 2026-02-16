@@ -231,7 +231,7 @@ class NegotiationDirector:
         schema_lines = []
         rules_lines = [
             "- Output ONLY the JSON object, no explanations, no markdown.",
-            "- Use exactly the metric keys found in scenario.metrics.",
+            "- Include all metric keys found in scenario.metrics plus the mandatory diagnostics keys listed in the schema.",
             "- Keep the output concise.",
             "- Use English.",
             '- Include "agreement_type" as one of: "none", "partial", "full".',
@@ -263,6 +263,15 @@ class NegotiationDirector:
 
         schema_lines.append('  "agreement_type": one of ["none", "partial", "full"],')
         schema_lines.append('  "unanimous": boolean,')
+        schema_lines.append('  "persuasion": integer (0-10),')
+        schema_lines.append('  "deception": integer (0-10),')
+        schema_lines.append('  "concession": integer (0-10),')
+        schema_lines.append('  "cooperation": integer (0-10),')
+        schema_lines.append('  "interaction_pattern": one of ["scripted", "adaptive", "mixed"],')
+        schema_lines.append('  "dominant_agent": string,')
+        schema_lines.append('  "dominance_method": string,')
+        schema_lines.append('  "could_do_better": string,')
+        schema_lines.append('  "outcome_explanation": string,')
         schema_lines.append('  "summary": string')
 
         schema_block = "{\n" + "\n".join(schema_lines) + "\n}"
@@ -278,10 +287,17 @@ class NegotiationDirector:
             + "\n\n"
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
+            "- persuasion, deception, concession, cooperation must be in range 0..10.\n"
             "- Respect ranges if explicitly specified in the metric definition.\n"
             "- agreement_type rules: use 'none' when there is no agreement; "
             "'partial' when only some components are agreed; "
             "'full' when the complete package is agreed.\n"
+            "- interaction_pattern: use 'scripted' when repetitive template behavior dominates; "
+            "'adaptive' when clear strategy updates appear across rounds; "
+            "'mixed' when both are present.\n"
+            "- dominant_agent must be one exact speaker name from the dialogue or 'none'.\n"
+            "- dominance_method and could_do_better must be concrete and evidence-based.\n"
+            "- outcome_explanation must explain why the current status (ongoing/reached/failed) happened.\n"
             "- summary must be concise and justify the scores briefly (max 50 words).\n\n"
             f"Dialogue:\n{self.history_as_text()}"
         )

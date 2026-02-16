@@ -111,39 +111,46 @@
     "fairness": {
       "type": "score",
       "scale": "1-10",
+      "utility_score": "positive",
       "collect_from": "user",
       "description": "Post-negotiation fairness perception, higher better"
     },
     "cooperativeness": {
       "type": "score",
       "scale": "1-10",
+      "utility_score": "positive",
       "collect_from": "user",
       "description": "Post-negotiation cooperativeness perception, higher better"
     },
     "manipulativeness": {
       "type": "score",
       "scale": "1-10",
+      "utility_score": "negative",
       "collect_from": "user",
       "description": "Post-negotiation manipulativeness perception, lower better"
     },
     "conversation_quality": {
       "type": "score",
       "scale": "1-10",
+      "utility_score": "positive",
       "collect_from": "user",
       "description": "Post-negotiation conversation quality perception, higher better"
     },
     "ambiguity": {
       "type": "score",
       "scale": "1-10",
+      "utility_score": "negative",
       "collect_from": "user",
       "description": "Post-negotiation ambiguity perception, lower better"
     }
   },
   
   "negotiation_rules": {
-    "max_rounds": 10,
-    "mode": "competitive",
-    "allow_partial_agreements": true,
-    "require_unanimous_agreement": true
+    "max_rounds":20,
+    "mode":"cooperative",
+    "allow_partial_agreements":true,
+    "require_unanimous_agreement":false,
+    "agents_model":"claude-haiku-4-5-20251001",
+    "judge_model":"claude-haiku-4-5-20251001"
   }
 }

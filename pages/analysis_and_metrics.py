@@ -203,7 +203,7 @@ for row in records:
         agreement_round = round_id
 
 st.subheader("Records Table")
-st.dataframe(evaluations_df, use_container_width=True)
+st.dataframe(evaluations_df, width="stretch")
 
 st.subheader("Judge Metrics Over Rounds")
 plot_df = pd.DataFrame(series_rows)

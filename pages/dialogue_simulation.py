@@ -22,16 +22,6 @@ if "evaluations_df" not in st.session_state:
     st.session_state.evaluations_df = pd.DataFrame()
 
 st.title("Dialogue Simulation")
-st.markdown(
-    """
-Implement iterative rounds of conversation where agents exchange proposals until an agreement
-or impasse is reached. We may have test variations such as:
-
-- **Cooperative Mode** - shared goal
-- **Competitive Mode** - conflicting goals
-- **Mixed Mode** - partial cooperation or deception allowed
-"""
-)
 
 active_file, active_payload = get_active_scenario()
 if isinstance(active_payload, dict):
@@ -45,11 +35,17 @@ if not isinstance(active_payload, dict):
 
 active_rules = get_active_rules()
 director_payload = {**active_payload, "negotiation_rules": dict(active_rules)}
+agents_model_name = str(active_rules.get("agents_model", "claude-sonnet-4-5-20250929")).strip()
+judge_model_name = str(active_rules.get("judge_model", "claude-sonnet-4-5-20250929")).strip()
+if not agents_model_name:
+    agents_model_name = "claude-sonnet-4-5-20250929"
+if not judge_model_name:
+    judge_model_name = "claude-sonnet-4-5-20250929"
 
 
 # Factory for model instances; customize this per agent if needed.
 def llm_factory(_spec):
-    return ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0.2)
+    return ChatAnthropic(model=agents_model_name, temperature=0.3)
 
 
 def _scenario_signature(payload: dict) -> str:
@@ -96,7 +92,7 @@ def advance_round_and_evaluate():
 
     turn_messages = director.step(input_message)
 
-    judge_llm = ChatAnthropic(model="claude-sonnet-4-5-20250929", temperature=0)
+    judge_llm = ChatAnthropic(model=judge_model_name, temperature=0.1)
     evaluation = director.evaluate(judge_llm)
     director.register_evaluation(evaluation)
 
@@ -272,6 +268,8 @@ with col5:
 st.caption(f"Scenario in use: {scenario}")
 st.caption(f"Rounds completed: {st.session_state.round}")
 st.caption(f"Max rounds: {director.max_rounds}")
+st.caption(f"Agents model: {agents_model_name}")
+st.caption(f"Judge model: {judge_model_name}")
 if director.is_terminated:
     if director.termination_reason == "reached":
         st.success("Negotiation ended: agreement reached.")

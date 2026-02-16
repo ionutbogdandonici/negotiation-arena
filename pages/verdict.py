@@ -18,6 +18,13 @@ def _to_int(value):
         return None
 
 
+def _first_non_empty(*values):
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _metric_value(row: dict, metric_name: str):
     keys = [metric_name] + METRIC_ALIASES.get(metric_name, [])
     for key in keys:
@@ -90,3 +97,39 @@ fig.update_traces(line={"width": 5})
 fig.update_legends(title_text="Utility", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
 fig.update_yaxes(range=[-20, 30])
 st.plotly_chart(fig, width="stretch")
+
+st.subheader("Outcome Explanation")
+latest_row = records[-1] if records else {}
+
+diag_cols = st.columns(4)
+diagnostic_metrics = ["persuasion", "deception", "concession", "cooperation"]
+for index, metric_name in enumerate(diagnostic_metrics):
+    metric_value = _to_int(latest_row.get(metric_name))
+    with diag_cols[index]:
+        st.metric(
+            metric_name.title(),
+            metric_value if metric_value is not None else "N/A",
+        )
+
+interaction_pattern = _first_non_empty(latest_row.get("interaction_pattern"))
+dominant_agent = _first_non_empty(latest_row.get("dominant_agent"))
+dominance_method = _first_non_empty(latest_row.get("dominance_method"))
+could_do_better = _first_non_empty(latest_row.get("could_do_better"))
+outcome_explanation = _first_non_empty(
+    latest_row.get("outcome_explanation"),
+    latest_row.get("summary"),
+)
+
+if interaction_pattern:
+    st.badge(f"Interaction pattern: {interaction_pattern}", color="blue")
+if dominant_agent:
+    st.badge(f"Dominant agent: {dominant_agent}", color="orange")
+
+if dominance_method:
+    st.write(f"**How dominance happened:** {dominance_method}")
+if could_do_better:
+    st.write(f"**Could do better:** {could_do_better}")
+if outcome_explanation:
+    st.write(f"**Why this outcome happened:** {outcome_explanation}")
+else:
+    st.caption("Run at least one evaluated round to generate an explanation.")
