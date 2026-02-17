@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import streamlit as st
 import pandas as pd
@@ -6,6 +8,7 @@ from langchain_anthropic import ChatAnthropic
 
 from core.director import NegotiationDirector
 from negotiation_rules_state import get_active_rules
+from run_results_store import append_global_result
 from scenario_state import get_active_scenario
 
 if "history" not in st.session_state:
@@ -24,6 +27,12 @@ if "final_evaluation" not in st.session_state:
     st.session_state.final_evaluation = None
 if "final_evaluation_meta" not in st.session_state:
     st.session_state.final_evaluation_meta = None
+if "run_id" not in st.session_state:
+    st.session_state.run_id = str(uuid4())
+if "run_started_at_utc" not in st.session_state:
+    st.session_state.run_started_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+if "run_saved" not in st.session_state:
+    st.session_state.run_saved = False
 
 st.title("Dialogue Simulation")
 
@@ -44,6 +53,9 @@ round_judge_model_name = str(active_rules.get("judge_model", "claude-sonnet-4-5-
 final_judge_model_name = str(
     active_rules.get("final_judge_model", round_judge_model_name or "claude-sonnet-4-5-20250929")
 ).strip()
+agents_temperature = float(active_rules.get("agents_temperature", 0.3))
+round_judge_temperature = float(active_rules.get("judge_temperature", 0.1))
+final_judge_temperature = float(active_rules.get("final_judge_temperature", round_judge_temperature))
 if not agents_model_name:
     agents_model_name = "claude-sonnet-4-5-20250929"
 if not round_judge_model_name:
@@ -54,11 +66,156 @@ if not final_judge_model_name:
 
 # Factory for model instances; customize this per agent if needed.
 def llm_factory(_spec):
-    return ChatAnthropic(model=agents_model_name, temperature=0.3)
+    return ChatAnthropic(model=agents_model_name, temperature=agents_temperature)
 
 
 def _scenario_signature(payload: dict) -> str:
     return json.dumps(payload, sort_keys=True, ensure_ascii=True)
+
+
+def _normalize_agreement_status(value) -> str:
+    if not isinstance(value, str):
+        return "ongoing"
+    label = value.split(":", 1)[0].strip().lower()
+    if label in {"reached", "failed", "ongoing"}:
+        return label
+    return "ongoing"
+
+
+def _is_numeric_metric(metric_spec: dict) -> bool:
+    metric_type = str(metric_spec.get("type", "")).lower()
+    return metric_type not in {"boolean", "enum", "multiclass", "categorical"}
+
+
+def _utility_sign(metric_spec: dict) -> int:
+    utility_score = str(metric_spec.get("utility_score", "positive")).strip().lower()
+    if utility_score in {"negative", "minus", "-1"}:
+        return -1
+    return 1
+
+
+def _round_utility_total(evaluation: dict, metrics: dict) -> int | None:
+    if not isinstance(evaluation, dict) or not isinstance(metrics, dict):
+        return None
+
+    total = 0
+    has_values = False
+    for metric_name, metric_spec in metrics.items():
+        if not isinstance(metric_spec, dict) or not _is_numeric_metric(metric_spec):
+            continue
+        metric_value = _to_int(evaluation.get(metric_name))
+        if metric_value is None:
+            continue
+        total += _utility_sign(metric_spec) * metric_value
+        has_values = True
+
+    return total if has_values else None
+
+
+def _utility_total_history_json() -> str:
+    metrics = active_payload.get("metrics", {}) if isinstance(active_payload, dict) else {}
+    history_items = []
+    for round_item in st.session_state.get("round_evaluations", []):
+        if not isinstance(round_item, dict):
+            continue
+        round_id = _to_int(round_item.get("round"))
+        evaluation = round_item.get("evaluation", {})
+        utility_total = _round_utility_total(evaluation, metrics)
+        if round_id is None:
+            continue
+        history_items.append(
+            {
+                "round": round_id,
+                "utility_total": utility_total,
+            }
+        )
+    return json.dumps(history_items, ensure_ascii=True)
+
+
+def _conversation_history_json(history: list[dict]) -> str:
+    messages = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        agent = str(item.get("agent", "")).strip()
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        messages.append(f"{agent}: {content}" if agent else content)
+    return json.dumps(messages, ensure_ascii=True)
+
+
+def _new_run_identity() -> None:
+    st.session_state.run_id = str(uuid4())
+    st.session_state.run_started_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    st.session_state.run_saved = False
+
+
+def _build_global_result_row(
+    director: NegotiationDirector,
+    final_evaluation: dict | None,
+) -> dict:
+    agents = active_payload.get("agents", []) if isinstance(active_payload, dict) else []
+    final_eval = final_evaluation if isinstance(final_evaluation, dict) else {}
+    latest_round_eval = st.session_state.get("evaluation", {})
+    if not isinstance(latest_round_eval, dict):
+        latest_round_eval = {}
+    agreement_status = _normalize_agreement_status(
+        final_eval.get("agreement_status", director.latest_agreement_status)
+    )
+
+    def _final_metric_value(metric_name: str):
+        value = _to_int(final_eval.get(metric_name))
+        if value is not None:
+            return value
+        return _to_int(latest_round_eval.get(metric_name))
+
+    return {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "run_id": st.session_state.get("run_id", ""),
+        "scenario_file": active_file or "",
+        "scenario_name": active_scenario_name,
+        "num_agents": len(agents) if isinstance(agents, list) else 0,
+        "agents_model": agents_model_name,
+        "agents_temperature": agents_temperature,
+        "round_judge_model": round_judge_model_name,
+        "round_judge_temperature": round_judge_temperature,
+        "final_judge_model": final_judge_model_name,
+        "final_judge_temperature": final_judge_temperature,
+        "mode": str(active_rules.get("mode", "")),
+        "max_rounds": director.max_rounds,
+        "effective_rounds": director.round,
+        "allow_partial_agreements": bool(active_rules.get("allow_partial_agreements", True)),
+        "require_unanimous_agreement": bool(active_rules.get("require_unanimous_agreement", True)),
+        "agreement_status": agreement_status,
+        "conversation_history": _conversation_history_json(director.get_history()),
+        "utility_total_history": _utility_total_history_json(),
+        "unanimous": final_eval.get("unanimous", ""),
+        "final_persuasion": _final_metric_value("persuasion"),
+        "final_deception": _final_metric_value("deception"),
+        "final_concession": _final_metric_value("concession"),
+        "final_cooperation": _final_metric_value("cooperation"),
+        "final_summary": final_eval.get("summary", ""),
+        "interaction_pattern": final_eval.get("interaction_pattern", ""),
+        "dominant_agent": final_eval.get("dominant_agent", ""),
+    }
+
+
+def _persist_run_result(
+    director: NegotiationDirector,
+    final_evaluation: dict | None,
+) -> None:
+    if st.session_state.get("run_saved"):
+        return
+    if director.round <= 0 and not director.get_history():
+        return
+
+    row = _build_global_result_row(
+        director=director,
+        final_evaluation=final_evaluation,
+    )
+    append_global_result(row)
+    st.session_state.run_saved = True
 
 
 def get_or_create_director() -> NegotiationDirector:
@@ -73,7 +230,18 @@ def get_or_create_director() -> NegotiationDirector:
     )
 
     if should_recreate:
-        had_existing_director = st.session_state.director is not None
+        previous_director = st.session_state.director
+        had_existing_director = previous_director is not None
+        if (
+            had_existing_director
+            and previous_director.round > 0
+            and not previous_director.is_terminated
+            and not st.session_state.get("run_saved")
+        ):
+            _persist_run_result(
+                director=previous_director,
+                final_evaluation=None,
+            )
         st.session_state.director = NegotiationDirector(director_payload, llm_factory)
         st.session_state.director_scenario_file = active_file
         st.session_state.director_scenario_signature = active_signature
@@ -87,6 +255,7 @@ def get_or_create_director() -> NegotiationDirector:
             st.session_state.evaluations_df = pd.DataFrame()
             st.session_state.final_evaluation = None
             st.session_state.final_evaluation_meta = None
+            _new_run_identity()
     return st.session_state.director
 
 
@@ -103,8 +272,8 @@ def advance_round_and_evaluate():
 
     turn_messages = director.step(input_message)
 
-    judge_llm = ChatAnthropic(model=round_judge_model_name, temperature=0.1)
-    evaluation = director.evaluate(judge_llm, scope="round")
+    judge_llm = ChatAnthropic(model=round_judge_model_name, temperature=round_judge_temperature)
+    evaluation = director.evaluate_round(judge_llm)
     director.register_evaluation(evaluation)
 
     st.session_state.history = director.get_history()
@@ -158,12 +327,22 @@ def _maybe_run_final_evaluation(director: NegotiationDirector) -> None:
         "history_len": len(director.get_history()),
     }
     if st.session_state.get("final_evaluation_meta") == meta:
+        existing_final = st.session_state.get("final_evaluation")
+        if not st.session_state.get("run_saved") and isinstance(existing_final, dict):
+            _persist_run_result(
+                director=director,
+                final_evaluation=existing_final,
+            )
         return
 
-    final_judge_llm = ChatAnthropic(model=final_judge_model_name, temperature=0.1)
-    final_evaluation = director.evaluate(final_judge_llm, scope="final")
+    final_judge_llm = ChatAnthropic(model=final_judge_model_name, temperature=final_judge_temperature)
+    final_evaluation = director.evaluate_final(final_judge_llm)
     st.session_state.final_evaluation = final_evaluation
     st.session_state.final_evaluation_meta = meta
+    _persist_run_result(
+        director=director,
+        final_evaluation=final_evaluation,
+    )
 
 
 def _to_int(value):
@@ -263,6 +442,11 @@ def _render_judge_evaluation(current_eval: dict, previous_eval: dict, metric_spe
 
 def reset_dialogue():
     director = get_or_create_director()
+    if director.round > 0 and not director.is_terminated:
+        _persist_run_result(
+            director=director,
+            final_evaluation=None,
+        )
     director.reset()
     st.session_state.history = []
     st.session_state.round = 0
@@ -271,6 +455,7 @@ def reset_dialogue():
     st.session_state.evaluations_df = pd.DataFrame()
     st.session_state.final_evaluation = None
     st.session_state.final_evaluation_meta = None
+    _new_run_identity()
 
 
 director = get_or_create_director()
@@ -302,8 +487,11 @@ with st.expander("Configuration & Status", expanded=False):
     with col_c:
         st.markdown("### Models")
         st.write(f"**Agents**: {agents_model_name}")
+        st.write(f"**Agents temp**: {agents_temperature}")
         st.write(f"**Round judge**: {round_judge_model_name}")
+        st.write(f"**Round judge temp**: {round_judge_temperature}")
         st.write(f"**Final judge**: {final_judge_model_name}")
+        st.write(f"**Final judge temp**: {final_judge_temperature}")
 
 col1, col2, col3 = st.columns([2, 2, 2], vertical_alignment="bottom")
 with col1:

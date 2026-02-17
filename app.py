@@ -24,7 +24,10 @@ pages = {
                 icon=":material/insights:"),
         st.Page("pages/verdict.py",
                 title="Verdict",
-                icon=":material/gavel:")
+                icon=":material/gavel:"),
+        st.Page("pages/global_results.py",
+                title="Global Results",
+                icon=":material/table_view:")
     ]
 }
 

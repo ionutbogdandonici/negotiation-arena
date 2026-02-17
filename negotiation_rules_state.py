@@ -14,6 +14,9 @@ DEFAULT_RULES = {
     "agents_model": "claude-sonnet-4-5-20250929",
     "judge_model": "claude-sonnet-4-5-20250929",
     "final_judge_model": "claude-sonnet-4-5-20250929",
+    "agents_temperature": 0.3,
+    "judge_temperature": 0.1,
+    "final_judge_temperature": 0.1,
 }
 MODE_OPTIONS = {"cooperative", "competitive", "mixed"}
 
@@ -24,6 +27,20 @@ def _read_rule_value(value: Any, default: Any) -> Any:
     if value is None:
         return default
     return value
+
+
+def _normalize_temperature(value: Any, default: float) -> float:
+    raw = _read_rule_value(value, default)
+    try:
+        normalized = float(raw)
+    except (TypeError, ValueError):
+        normalized = float(default)
+
+    if normalized < 0:
+        normalized = 0.0
+    if normalized > 2:
+        normalized = 2.0
+    return round(normalized, 1)
 
 
 def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
@@ -44,6 +61,15 @@ def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
     final_judge_model = str(
         _read_rule_value(raw_rules.get("final_judge_model"), judge_model or DEFAULT_RULES["final_judge_model"])
     ).strip()
+    agents_temperature = _normalize_temperature(
+        raw_rules.get("agents_temperature"), DEFAULT_RULES["agents_temperature"]
+    )
+    judge_temperature = _normalize_temperature(
+        raw_rules.get("judge_temperature"), DEFAULT_RULES["judge_temperature"]
+    )
+    final_judge_temperature = _normalize_temperature(
+        raw_rules.get("final_judge_temperature"), judge_temperature
+    )
 
     if not isinstance(max_rounds, int) or max_rounds < 1:
         max_rounds = DEFAULT_RULES["max_rounds"]
@@ -64,6 +90,9 @@ def _normalize_rules(raw_rules: dict[str, Any]) -> dict[str, Any]:
         "agents_model": agents_model,
         "judge_model": judge_model,
         "final_judge_model": final_judge_model,
+        "agents_temperature": agents_temperature,
+        "judge_temperature": judge_temperature,
+        "final_judge_temperature": final_judge_temperature,
     }
 
 

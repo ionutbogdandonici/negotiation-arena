@@ -7,31 +7,29 @@
       "id": "agent_a",
       "name": "The Technical Founder",
       "role": "CTO",
-      "public_description": "The technical founder who developed the core software",
+      "public_description": "The technical founder who developed the core software over 18 months of unpaid work",
       
-      "objective": "to obtain at least 60% equity because it has developed core business",
+      "objective": "to secure fair recognition for technical contributions while ensuring sufficient development budget",
       
       "resources": {
-        "owns": ["software_ip"],
-        "description": "Software intellectual property (high perceived value)"
+        "owns": ["software_ip", "technical_expertise"],
+        "description": "Software intellectual property and deep technical expertise (valued at ~€80k in sweat equity)"
       },
       
       "constraints": [
-        "needs capital for development",
-        "willing to relinquish operational control"
+        "needs capital for development and can't self-fund",
+        "willing to share operational control but wants voice in product decisions",
+        "open to vesting schedules to align long-term incentives"
       ],
       
-      "utility_function": {
-        "equity": 0.40,
-        "decision_control": 0.30,
-        "financial_resources": 0.30
-      },
-      
       "private_goals": {
-        "min_equity_percent": 60,
-        "preferred_equity_percent": 70,
+        "min_equity_percent": 45,
+        "preferred_equity_percent": 55,
         "must_control_areas": ["product"],
-        "budget_needed": 40000
+        "acceptable_shared_areas": ["hiring"],
+        "budget_needed": 35000,
+        "willing_to_vest": true,
+        "deal_breakers": ["less than 40% equity", "no product control", "less than €30k for development"]
       }
     },
     
@@ -39,31 +37,34 @@
       "id": "agent_b",
       "name": "The Business Founder",
       "role": "CEO",
-      "public_description": "The business founder with capital and network",
+      "public_description": "The business founder bringing €100k capital and an extensive professional network",
       
-      "objective": "to obtain 50% equity + operational control",
+      "objective": "to protect capital investment while securing operational control to execute business strategy",
       
       "resources": {
-        "owns": ["capital", "network"],
-        "description": "€100k capital and contacts network (high perceived value)",
+        "owns": ["capital", "network", "business_expertise"],
+        "description": "€100k capital investment and valuable industry contacts (10+ potential clients identified)",
         "capital_amount": 100000
       },
       
       "constraints": [
-        "wants to protect investment funds"
+        "must protect the €100k investment with reasonable equity",
+        "needs operational control to execute go-to-market strategy",
+        "willing to give technical founder control over product decisions"
       ],
       
-      "utility_function": {
-        "equity": 0.50,
-        "operational_control": 0.40,
-        "financial_guarantees": 0.10
-      },
-      
       "private_goals": {
-        "min_equity_percent": 50,
-        "preferred_equity_percent": 60,
-        "must_control_areas": ["marketing", "hiring"],
-        "investment_to_protect": 100000
+        "min_equity_percent": 45,
+        "preferred_equity_percent": 55,
+        "must_control_areas": ["marketing"],
+        "acceptable_shared_areas": ["hiring"],
+        "investment_to_protect": 100000,
+        "willing_to_vest": true,
+        "budget_allocation_preference": {
+          "marketing_min": 30000,
+          "salaries_min": 40000
+        },
+        "deal_breakers": ["less than 40% equity", "no marketing control", "less than €25k for marketing"]
       }
     }
   ],
@@ -73,30 +74,44 @@
       "total": 100,
       "unit": "percent",
       "divisible": true,
-      "description": "Equity share: 100% total"
+      "description": "Equity share: 100% total",
+      "considerations": "Consider founder contributions, cash investment, future value creation"
     },
     
     "budget": {
       "total": 100000,
       "currency": "EUR",
       "categories": {
-        "salaries": {"min": 0, "max": 100000},
-        "marketing": {"min": 0, "max": 100000},
-        "development": {"min": 0, "max": 100000}
+        "salaries": {"min": 20000, "max": 60000, "description": "Minimum living expenses for founders"},
+        "marketing": {"min": 15000, "max": 50000, "description": "Customer acquisition and brand building"},
+        "development": {"min": 15000, "max": 50000, "description": "Product development and infrastructure"}
       },
       "constraint": "sum must equal 100000",
-      "description": "Budget allocation: €100,000 (salaries, marketing, development)"
+      "description": "Budget allocation: €100,000 (salaries, marketing, development)",
+      "notes": "Balance immediate needs with growth investment"
     },
     
     "decision_rights": {
-      "areas": ["product", "marketing", "hiring"],
-      "assignable_to": ["agent_a", "agent_b", "shared"],
-      "description": "Decision rights: Product, Marketing, Hiring"
+      "areas": ["product", "marketing", "hiring", "fundraising"],
+      "assignable_to": ["agent_a", "agent_b", "shared", "requires_consensus"],
+      "description": "Decision rights: Product, Marketing, Hiring, Fundraising",
+      "notes": "Consider which areas need speed vs. alignment"
     },
     
     "vesting": {
-      "options": ["immediate", "1_year", "4_years"],
-      "description": "Vesting schedule: Immediate vs. 4 years"
+      "options": ["immediate", "1_year", "2_years", "4_years_with_1_year_cliff"],
+      "description": "Vesting schedule: Aligns long-term commitment",
+      "notes": "Standard practice is 4 years with 1-year cliff for both founders"
+    },
+    
+    "additional_terms": {
+      "optional_clauses": [
+        "equal_salaries_commitment",
+        "non_compete_clause", 
+        "ip_assignment_agreement",
+        "dispute_resolution_process"
+      ],
+      "description": "Additional protective clauses for partnership sustainability"
     }
   },
   
@@ -146,11 +161,11 @@
   },
   
   "negotiation_rules": {
-    "max_rounds":20,
-    "mode":"cooperative",
-    "allow_partial_agreements":true,
-    "require_unanimous_agreement":false,
-    "agents_model":"claude-haiku-4-5-20251001",
-    "judge_model":"claude-haiku-4-5-20251001"
+    "max_rounds": 20,
+    "mode": "cooperative",
+    "allow_partial_agreements": true,
+    "require_unanimous_agreement": false,
+    "agents_model": "claude-haiku-4-5-20251001",
+    "judge_model": "claude-haiku-4-5-20251001"
   }
 }

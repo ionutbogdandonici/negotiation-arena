@@ -220,14 +220,17 @@ class NegotiationDirector:
             lines.append(f"{index}. [{msg['agent']}] {msg['content']}")
         return "\n".join(lines)
 
-    
 
-    def evaluate(self, judge_llm: Any, scope: str = "round") -> dict[str, Any]:
+
+    def evaluate_round(self, judge_llm: Any) -> dict[str, Any]:
         """
-        Evaluate the negotiation with a second model.
-        Return parseable JSON; if invalid, include the raw output.
+        Round Judge: evaluates the single round using scenario metrics.
+        Returns parsed JSON; if invalid, includes raw output.
         """
-        prompt = self.build_judge_prompt(scope=scope)
+        metrics = self.scenario.get("metrics", {})
+        metrics_json = json.dumps(metrics, ensure_ascii=True)
+        schema_block, rules_lines = self._build_round_judge_schema_and_rules(metrics)
+        prompt = self._build_round_judge_prompt(metrics_json, schema_block, rules_lines)
 
         response = judge_llm.invoke(prompt)
         raw_content = getattr(response, "content", str(response))
@@ -238,15 +241,130 @@ class NegotiationDirector:
         except json.JSONDecodeError:
             return {"error": "judge_output_not_json", "raw": raw_content}
 
-    def build_judge_prompt(self, scope: str = "round") -> str:
-        evaluation_scope = "final" if str(scope).strip().lower() == "final" else "round"
+    def evaluate_final(self, judge_llm: Any) -> dict[str, Any]:
+        """
+        Final Judge: evaluates the entire trajectory and produces final verdict.
+        Returns parsed JSON; if invalid, includes raw output.
+        """
         metrics = self.scenario.get("metrics", {})
         metrics_json = json.dumps(metrics, ensure_ascii=True)
-        schema_block, rules_lines = self._judge_schema_and_rules(metrics)
+        schema_block, rules_lines = self._build_final_judge_schema_and_rules(metrics)
+        prompt = self._build_final_judge_prompt(metrics_json, schema_block, rules_lines)
 
-        if evaluation_scope == "final":
-            return self._build_final_judge_prompt(metrics_json, schema_block, rules_lines)
-        return self._build_round_judge_prompt(metrics_json, schema_block, rules_lines)
+        response = judge_llm.invoke(prompt)
+        raw_content = getattr(response, "content", str(response))
+        cleaned = self._strip_code_fences(raw_content)
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            return {"error": "judge_output_not_json", "raw": raw_content}
+
+    def evaluate(self, judge_llm: Any, scope: str = "round") -> dict[str, Any]:
+        """
+        DEPRECATED: Use evaluate_round() or evaluate_final() instead.
+        Kept for backward compatibility.
+        """
+        if str(scope).strip().lower() == "final":
+            return self.evaluate_final(judge_llm)
+        return self.evaluate_round(judge_llm)
+
+    def _build_round_judge_schema_and_rules(self, metrics: dict[str, Any]) -> tuple[str, list[str]]:
+        """Build minimal schema for Round Judge: scenario metrics + agreement_status + summary."""
+        schema_lines = []
+        rules_lines = [
+            "- Output ONLY the JSON object, no explanations, no markdown.",
+            "- Include all metric keys found in scenario.metrics plus agreement_status and summary.",
+            "- Keep the output concise.",
+            "- Use English.",
+            '- Include "agreement_status" as one of: "ongoing", "reached", "failed".',
+        ]
+
+        # Add scenario-specific metrics
+        for metric_name, metric_spec in metrics.items():
+            metric_type = str(metric_spec.get("type", "")).lower()
+
+            if metric_type == "boolean":
+                schema_lines.append(f'  "{metric_name}": boolean,')
+            elif metric_type in ("enum", "multiclass", "categorical"):
+                allowed_values = self._allowed_enum_values(metric_spec)
+                if allowed_values:
+                    joined_values = ", ".join(f'"{value}"' for value in allowed_values)
+                    schema_lines.append(f'  "{metric_name}": one of [{joined_values}],')
+                    rules_lines.append(
+                        f"- For {metric_name}, output exactly one label from: {joined_values}."
+                    )
+                else:
+                    schema_lines.append(f'  "{metric_name}": string,')
+            else:
+                schema_lines.append(f'  "{metric_name}": integer,')
+                schema_lines.append(f'  "{metric_name}_top_words": [string, string],')
+                rules_lines.append(
+                    f"- For {metric_name}, include exactly two single-word keywords in "
+                    f'"{metric_name}_top_words" that most influenced the numeric score.'
+                )
+
+        # Add mandatory round judge fields
+        if "agreement_status" not in metrics:
+            schema_lines.append('  "agreement_status": one of ["ongoing", "reached", "failed"],')
+        schema_lines.append('  "summary": string')
+
+        return "{\n" + "\n".join(schema_lines) + "\n}", rules_lines
+
+    def _build_final_judge_schema_and_rules(self, metrics: dict[str, Any]) -> tuple[str, list[str]]:
+        """Build complete schema for Final Judge: scenario metrics + all diagnostic fields."""
+        schema_lines = []
+        rules_lines = [
+            "- Output ONLY the JSON object, no explanations, no markdown.",
+            "- Include all metric keys found in scenario.metrics plus the mandatory diagnostics keys listed in the schema.",
+            "- Keep the output concise.",
+            "- Use English.",
+            '- Include "agreement_status" as one of: "ongoing", "reached", "failed".',
+            '- Include "agreement_type" as one of: "none", "partial", "full".',
+            '- Include "unanimous" as boolean. Use true only if all parties explicitly confirm the final agreement.',
+        ]
+
+        # Add scenario-specific metrics
+        for metric_name, metric_spec in metrics.items():
+            metric_type = str(metric_spec.get("type", "")).lower()
+
+            if metric_type == "boolean":
+                schema_lines.append(f'  "{metric_name}": boolean,')
+            elif metric_type in ("enum", "multiclass", "categorical"):
+                allowed_values = self._allowed_enum_values(metric_spec)
+                if allowed_values:
+                    joined_values = ", ".join(f'"{value}"' for value in allowed_values)
+                    schema_lines.append(f'  "{metric_name}": one of [{joined_values}],')
+                    rules_lines.append(
+                        f"- For {metric_name}, output exactly one label from: {joined_values}."
+                    )
+                else:
+                    schema_lines.append(f'  "{metric_name}": string,')
+            else:
+                schema_lines.append(f'  "{metric_name}": integer,')
+                schema_lines.append(f'  "{metric_name}_top_words": [string, string],')
+                rules_lines.append(
+                    f"- For {metric_name}, include exactly two single-word keywords in "
+                    f'"{metric_name}_top_words" that most influenced the numeric score.'
+                )
+
+        # Add mandatory final judge fields
+        if "agreement_status" not in metrics:
+            schema_lines.append('  "agreement_status": one of ["ongoing", "reached", "failed"],')
+        schema_lines.append('  "agreement_type": one of ["none", "partial", "full"],')
+        schema_lines.append('  "unanimous": boolean,')
+        schema_lines.append('  "persuasion": integer (0-10),')
+        schema_lines.append('  "deception": integer (0-10),')
+        schema_lines.append('  "concession": integer (0-10),')
+        schema_lines.append('  "cooperation": integer (0-10),')
+        schema_lines.append('  "interaction_pattern": one of ["scripted", "adaptive", "mixed"],')
+        schema_lines.append('  "dominant_agent": string,')
+        schema_lines.append('  "dominance_method": string,')
+        schema_lines.append('  "could_do_better": string,')
+        schema_lines.append('  "outcome_explanation": string,')
+        schema_lines.append('  "summary": string')
+
+        return "{\n" + "\n".join(schema_lines) + "\n}", rules_lines
 
     def _judge_schema_and_rules(self, metrics: dict[str, Any]) -> tuple[str, list[str]]:
         schema_lines = []
@@ -306,9 +424,9 @@ class NegotiationDirector:
         rules_lines: list[str],
     ) -> str:
         return (
-            "You are the ROUND_JUDGE, a neutral evaluator of a negotiation dialogue.\n"
-            "Evaluate the latest round while keeping full context from earlier rounds.\n\n"
-            "Evaluation scope: round\n"
+            "You are the ROUND_JUDGE, an incremental annotator of a negotiation dialogue.\n"
+            "Evaluate the latest round using only the scenario-specific metrics.\n\n"
+            "Evaluation scope: round (incremental annotation)\n"
             f"Current negotiation status: {self.latest_agreement_status}\n\n"
             f"Scenario metrics:\n{metrics_json}\n\n"
             "Output a SINGLE JSON object that strictly follows this schema:\n\n"
@@ -318,25 +436,21 @@ class NegotiationDirector:
             + "\n\n"
             "Scope-specific constraints (round judge):\n"
             "- Focus primarily on the newest round evidence.\n"
-            "- Keep consistency with prior context, but do not summarize the whole run as a final verdict.\n"
+            "- Evaluate only the scenario metrics, agreement_status, and provide a brief summary.\n"
+            "- Do NOT assess strategic patterns, persuasion tactics, or final outcomes - that's the Final Judge's job.\n"
+            "- Keep consistency with prior context, but do not produce final verdicts.\n"
+            "- Be decisive on termination: do not keep the dialogue alive by default.\n"
+            "- Use 'ongoing' only if the latest round adds concrete progress (new specific terms, explicit concessions, or clear next-step commitments).\n"
+            "- If the latest round is repetitive, vague, evasive, or adds no concrete movement, mark agreement_status as 'failed'.\n"
+            "- If the conversation keeps oscillating without substantive change across recent rounds, mark agreement_status as 'failed'.\n"
             "- Set agreement_status to reached/failed only with clear dialogue evidence.\n\n"
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
-            "- persuasion, deception, concession, cooperation must be in range 0..10.\n"
             "- Respect ranges if explicitly specified in the metric definition.\n"
-            "- agreement_status rules: use 'ongoing' while the negotiation is still active; "
-            "'reached' when parties clearly converged on a deal; "
-            "'failed' when they are at impasse or explicitly reject continuation.\n"
-            "- agreement_type rules: use 'none' when there is no agreement; "
-            "'partial' when only some components are agreed; "
-            "'full' when the complete package is agreed.\n"
-            "- interaction_pattern: use 'scripted' when repetitive template behavior dominates; "
-            "'adaptive' when clear strategy updates appear across rounds; "
-            "'mixed' when both are present.\n"
-            "- dominant_agent must be one exact speaker name from the dialogue or 'none'.\n"
-            "- dominance_method and could_do_better must be concrete and evidence-based.\n"
-            "- outcome_explanation must explain why the current status (ongoing/reached/failed) happened.\n"
-            "- summary must be concise and justify the scores briefly (max 50 words).\n\n"
+            "- agreement_status rules: use 'reached' only when parties explicitly converge on concrete deal terms; "
+            "use 'failed' when they are at impasse, reject continuation, or stall without concrete progress; "
+            "use 'ongoing' only when this round adds concrete movement toward closure.\n"
+            "- summary must be concise and focused on this round (max 30 words).\n\n"
             f"Dialogue:\n{self.history_as_text()}"
         )
 
@@ -347,9 +461,9 @@ class NegotiationDirector:
         rules_lines: list[str],
     ) -> str:
         return (
-            "You are the FINAL_JUDGE, a neutral evaluator of a negotiation dialogue.\n"
-            "Assess the whole trajectory and produce the final verdict.\n\n"
-            "Evaluation scope: final\n"
+            "You are the FINAL_JUDGE, a comprehensive evaluator of a negotiation dialogue.\n"
+            "Assess the whole trajectory and produce the final verdict with complete diagnostics.\n\n"
+            "Evaluation scope: final (complete assessment)\n"
             f"Current negotiation status: {self.latest_agreement_status}\n\n"
             f"Scenario metrics:\n{metrics_json}\n\n"
             "Output a SINGLE JSON object that strictly follows this schema:\n\n"
@@ -359,8 +473,10 @@ class NegotiationDirector:
             + "\n\n"
             "Scope-specific constraints (final judge):\n"
             "- Evaluate the complete conversation from start to finish.\n"
+            "- Assess both scenario metrics AND strategic/tactical patterns (persuasion, deception, etc.).\n"
             "- Resolve inconsistencies across rounds and produce one coherent terminal assessment.\n"
-            "- Your agreement_status must represent the final outcome.\n\n"
+            "- Your agreement_status must represent the final outcome.\n"
+            "- Provide detailed diagnostics on negotiation dynamics and agent behavior.\n\n"
             "Scoring constraints:\n"
             "- All numeric values must be integers.\n"
             "- persuasion, deception, concession, cooperation must be in range 0..10.\n"
@@ -376,8 +492,8 @@ class NegotiationDirector:
             "'mixed' when both are present.\n"
             "- dominant_agent must be one exact speaker name from the dialogue or 'none'.\n"
             "- dominance_method and could_do_better must be concrete and evidence-based.\n"
-            "- outcome_explanation must explain why the current status (ongoing/reached/failed) happened.\n"
-            "- summary must be concise and justify the scores briefly (max 50 words).\n\n"
+            "- outcome_explanation must provide a comprehensive explanation of why the negotiation reached its final status.\n"
+            "- summary must synthesize the overall negotiation trajectory and justify all diagnostic scores (max 80 words).\n\n"
             f"Dialogue:\n{self.history_as_text()}"
         )
 

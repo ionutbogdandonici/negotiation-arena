@@ -112,7 +112,7 @@ fig.update_layout(
         )
 fig.update_traces(line={"width": 5})
 fig.update_legends(title_text="Utility", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
-fig.update_yaxes(range=[-20, 30])
+
 st.plotly_chart(fig, width="stretch")
 
 st.subheader("Outcome Explanation")

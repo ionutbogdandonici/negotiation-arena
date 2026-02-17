@@ -138,7 +138,18 @@ round_items = {
 evaluations_df["messages"] = evaluations_df["round"].apply(
     lambda round_id: _round_messages_text(round_items.get(round_id, {}))
 )
-evaluations_df = evaluations_df.drop(columns=["unanimous", "agreement_type"], errors="ignore")
+evaluations_df = evaluations_df.drop(
+    columns=[
+        "unanimous",
+        "agreement_type",
+        "interaction_pattern",
+        "dominant_agent",
+        "dominance_method",
+        "could_do_better",
+        "outcome_explanation",
+    ],
+    errors="ignore",
+)
 records = evaluations_df.to_dict(orient="records")
 active_file, active_payload = get_active_scenario()
 if not isinstance(active_payload, dict):
@@ -245,7 +256,6 @@ with utility_col:
         )
         utility_fig.update_traces(line={"width": 5})
         utility_fig.update_legends(title_text="Utility", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
-        utility_fig.update_yaxes(range=[-20, 30])
         st.plotly_chart(utility_fig, width="stretch")
     else:
         st.caption("Utility total unavailable.")
@@ -266,20 +276,24 @@ with report_details:
             status, color = _agreement_status_and_color(row)
             st.badge(f"Agreement status: {status}", color=color)
 
-            columns = st.columns(5)
-            for col_idx, (label, aliases) in enumerate(metric_aliases):
-                current_value = _coalesce_numeric(row, aliases)
-                previous_value = _coalesce_numeric(prev_row, aliases)
-                delta = None
-                if current_value is not None and previous_value is not None:
-                    delta = current_value - previous_value
+            # Render metrics in rows of up to 5 columns to avoid index overflow
+            # when scenarios define more than five numeric metrics.
+            for start_idx in range(0, len(metric_aliases), 5):
+                metric_chunk = metric_aliases[start_idx:start_idx + 5]
+                columns = st.columns(len(metric_chunk))
+                for col_idx, (label, aliases) in enumerate(metric_chunk):
+                    current_value = _coalesce_numeric(row, aliases)
+                    previous_value = _coalesce_numeric(prev_row, aliases)
+                    delta = None
+                    if current_value is not None and previous_value is not None:
+                        delta = current_value - previous_value
 
-                with columns[col_idx]:
-                    st.metric(
-                        label=label,
-                        value=current_value if current_value is not None else "N/A",
-                        delta=delta,
-                    )
+                    with columns[col_idx]:
+                        st.metric(
+                            label=label,
+                            value=current_value if current_value is not None else "N/A",
+                            delta=delta,
+                        )
 
             summary = row.get("summary")
             if isinstance(summary, str) and summary.strip():

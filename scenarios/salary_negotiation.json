@@ -1,0 +1,265 @@
+{
+  "name": "Salary Negotiation",
+  "description": "A senior software engineer with a competing offer negotiates compensation and benefits with an HR manager who has budget constraints but needs to close the position quickly. The negotiation spans multiple dimensions: base salary, bonus, equity, benefits, remote work arrangements, and start date.",
+
+  "agents": [
+    {
+      "id": "agent_a",
+      "name": "Alex Chen",
+      "role": "Senior Software Engineer (Candidate)",
+      "public_description": "Experienced software engineer with 7 years in backend systems and distributed architecture. Currently employed but exploring new opportunities. Has demonstrated expertise in Python, Go, and cloud infrastructure.",
+
+      "objective": "to secure a compensation package that reflects market value and competing offers while optimizing for remote work flexibility and career growth",
+
+      "resources": {
+        "owns": ["specialized_expertise", "competing_offer", "current_employment"],
+        "description": "7 years of experience in backend systems, current employment provides negotiation leverage, competing offer from TechCorp at €78k base + 15% bonus + full remote"
+      },
+
+      "constraints": [
+        "needs minimum 3 weeks to give notice at current company",
+        "requires remote work flexibility for family reasons (2 days minimum)",
+        "willing to accept mid-level title if compensation is competitive",
+        "prefers stock options but not a deal-breaker if cash compensation is higher"
+      ],
+
+      "private_goals": {
+        "min_base_salary": 65000,
+        "preferred_base_salary": 75000,
+        "competing_offer_details": {
+          "company": "TechCorp",
+          "base_salary": 78000,
+          "bonus_percent": 15,
+          "remote_days": 5,
+          "equity": "none",
+          "total_comp": 89700
+        },
+        "min_remote_days": 2,
+        "preferred_remote_days": 5,
+        "min_total_compensation": 70000,
+        "preferred_title": "Senior Software Engineer",
+        "acceptable_title": "Software Engineer II",
+        "pto_preference": 25,
+        "professional_dev_budget_preference": 2000,
+        "notice_period_minimum": 3,
+        "notice_period_preferred": 4,
+        "deal_breakers": [
+          "base salary below €65k",
+          "less than 2 remote days per week",
+          "total compensation below €70k",
+          "start date before 3 weeks notice period"
+        ]
+      }
+    },
+
+    {
+      "id": "agent_b",
+      "name": "Jordan Martinez",
+      "role": "HR Manager",
+      "public_description": "HR manager responsible for closing a critical backend engineering position. The team has been understaffed for 2 months and the delay is impacting product delivery. Has authority to negotiate within approved budget bands.",
+
+      "objective": "to close the hire within budget while ensuring candidate accepts and starts as soon as possible to address team capacity issues",
+
+      "resources": {
+        "owns": ["position_authority", "budget_allocation", "benefits_package"],
+        "description": "Approved budget: €75k total compensation target with discretionary authority up to €85k for exceptional cases. Standard benefits package plus negotiable perks.",
+        "approved_budget": 75000,
+        "discretionary_ceiling": 85000
+      },
+
+      "constraints": [
+        "needs hire to start within 6 weeks to meet Q2 delivery commitments",
+        "company policy prefers 3 days in-office for team collaboration",
+        "equity grants require VP approval and take 2-3 weeks to process",
+        "must stay within total compensation budget to maintain team parity"
+      ],
+
+      "private_goals": {
+        "max_base_salary": 75000,
+        "absolute_max_base_salary": 80000,
+        "max_total_compensation": 75000,
+        "absolute_max_total_compensation": 85000,
+        "max_bonus_percent": 20,
+        "preferred_remote_days": 2,
+        "max_remote_days": 3,
+        "equity_grant_typical": "€10k-€15k vesting over 4 years",
+        "equity_approval_delay": "2-3 weeks",
+        "title_budget_constraint": "Senior title requires €70k+ base minimum",
+        "preferred_start_window": "3-4 weeks",
+        "max_acceptable_start_delay": 6,
+        "pto_standard": 23,
+        "pto_max": 27,
+        "professional_dev_budget_standard": 1000,
+        "professional_dev_budget_max": 2500,
+        "urgency_factor": "high - team understaffed for 2 months, impacting Q2 deliverables",
+        "deal_breakers": [
+          "total compensation above €85k",
+          "more than 3 remote days per week",
+          "start date beyond 6 weeks",
+          "demands for VP-level title or privileges"
+        ]
+      }
+    }
+  ],
+
+  "resources_to_negotiate": {
+    "base_salary": {
+      "range": {
+        "min": 55000,
+        "max": 85000
+      },
+      "currency": "EUR",
+      "description": "Base annual salary: €55,000 - €85,000",
+      "notes": "Primary compensation component; typical range for mid to senior backend engineer"
+    },
+
+    "annual_bonus": {
+      "type": "percentage",
+      "range": {
+        "min": 0,
+        "max": 20
+      },
+      "unit": "percent of base",
+      "description": "Annual performance bonus: 0-20% of base salary",
+      "notes": "Discretionary based on individual and company performance; typically paid in Q1"
+    },
+
+    "equity_options": {
+      "type": "optional",
+      "typical_range": "€10,000 - €15,000 grant value",
+      "vesting": "4 years with 1-year cliff",
+      "description": "Stock options: Typical grant €10k-€15k vesting over 4 years",
+      "notes": "Requires VP approval; 2-3 week processing time; strike price at fair market value"
+    },
+
+    "remote_work": {
+      "type": "days_per_week",
+      "range": {
+        "min": 0,
+        "max": 5
+      },
+      "unit": "days per week",
+      "description": "Remote work days: 0-5 days per week",
+      "notes": "Company preference is 3 days in-office for collaboration; flexible based on role needs"
+    },
+
+    "paid_time_off": {
+      "range": {
+        "min": 20,
+        "max": 30
+      },
+      "unit": "days per year",
+      "description": "Paid time off: 20-30 days per year",
+      "notes": "Standard is 23 days; additional days possible for senior level or negotiation"
+    },
+
+    "professional_development": {
+      "range": {
+        "min": 0,
+        "max": 3000
+      },
+      "currency": "EUR",
+      "unit": "per year",
+      "description": "Professional development budget: €0-€3,000 per year",
+      "notes": "For conferences, courses, certifications; standard is €1,000"
+    },
+
+    "title_level": {
+      "options": [
+        "Software Engineer II",
+        "Senior Software Engineer",
+        "Staff Software Engineer"
+      ],
+      "description": "Job title and level",
+      "notes": "Title tied to compensation bands; Senior requires €70k+ base minimum"
+    },
+
+    "start_date": {
+      "type": "weeks_from_offer",
+      "range": {
+        "min": 2,
+        "max": 8
+      },
+      "unit": "weeks",
+      "description": "Start date: 2-8 weeks from offer acceptance",
+      "notes": "Typical notice period is 3-4 weeks; urgent need to fill role"
+    },
+
+    "additional_benefits": {
+      "optional_items": [
+        "relocation_assistance",
+        "signing_bonus",
+        "home_office_stipend",
+        "flexible_hours",
+        "sabbatical_eligibility"
+      ],
+      "description": "Additional negotiable benefits and perks"
+    }
+  },
+
+  "metrics": {
+    "agreement_status": {
+      "type": "multiclass",
+      "auto_detect": true,
+      "values": ["reached:green", "failed:red", "ongoing:blue"],
+      "description": "Whether agents reached an agreement"
+    },
+
+    "fairness": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "positive",
+      "collect_from": "user",
+      "description": "Perceived fairness of the negotiation outcome and process, higher is better"
+    },
+
+    "candidate_satisfaction": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "positive",
+      "collect_from": "user",
+      "description": "Candidate's satisfaction with compensation package and negotiation experience, higher is better"
+    },
+
+    "employer_satisfaction": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "positive",
+      "collect_from": "user",
+      "description": "Employer's satisfaction with hire cost and likelihood of acceptance, higher is better"
+    },
+
+    "retention_risk": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "negative",
+      "collect_from": "user",
+      "description": "Risk that candidate will leave within first year due to dissatisfaction, lower is better"
+    },
+
+    "negotiation_efficiency": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "positive",
+      "collect_from": "user",
+      "description": "How quickly and smoothly negotiation reached resolution, higher is better"
+    },
+
+    "value_creation": {
+      "type": "score",
+      "scale": "1-10",
+      "utility_score": "positive",
+      "collect_from": "user",
+      "description": "Degree to which negotiation found creative solutions benefiting both parties, higher is better"
+    }
+  },
+
+  "negotiation_rules": {
+    "max_rounds": 20,
+    "mode": "mixed",
+    "allow_partial_agreements": true,
+    "require_unanimous_agreement": false,
+    "agents_model": "claude-haiku-4-5-20251001",
+    "judge_model": "claude-haiku-4-5-20251001"
+  }
+}

@@ -25,7 +25,7 @@ def _render_items_in_columns(items, empty_message: str, label_prefix: str) -> No
                     title = str(item_name)
             with cols[i]:
                 st.markdown(f"**{title}**")
-                st.json(item, expanded=False)
+                st.json(item, expanded=True)
         return
 
     st.info(empty_message)
@@ -50,6 +50,8 @@ if active_payload is None:
         st.stop()
 
 st.caption(f"Scenario file: {active_file}")
+st.subheader("Description")
+st.write(active_payload.get("description", "No description provided for this scenario."))
 st.subheader("Agents")
 agents = active_payload.get("agents", [])
 _render_items_in_columns(agents, "No agents defined in this scenario.", "Agent")
