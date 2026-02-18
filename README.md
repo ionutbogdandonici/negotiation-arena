@@ -54,15 +54,6 @@ streamlit run app.py
 3. Click `Advance Conversation` to run one round at a time.
 4. Open `Analysis and Metrics` to inspect time-series and per-round judge reports.
 
-## GitHub Publish Checklist
-1. `git init`
-2. `git add .`
-3. `git commit -m "Initial commit"`
-4. Create an empty GitHub repository.
-5. `git branch -M main`
-6. `git remote add origin <your-repo-url>`
-7. `git push -u origin main`
-
 ## Notes
 - Never commit secrets (`ANTHROPIC_API_KEY`, `.streamlit/secrets.toml`).
 - Add new scenarios as JSON files in `scenarios/`.
