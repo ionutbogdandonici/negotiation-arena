@@ -3,6 +3,10 @@ import streamlit as st
 from scenario_state import get_active_scenario, list_scenario_files, load_scenario, set_active_scenario
 
 st.title("How Do Cooperative and Adversarial Behaviours Emerge Among LLM Agents in Negotiation?")
+st.write(
+    "This workspace analyzes how cooperative, competitive, and mixed negotiation modes shape outcomes among LLM agents. "
+    "Start by selecting a scenario, then run simulations and review metrics in the other sections."
+)
 
 scenario_files = list_scenario_files()
 

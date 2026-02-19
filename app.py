@@ -1,7 +1,7 @@
 import streamlit as st
 
 # Streamlit configuration
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="LLM Negotiation Arena")
 
 # Add pages to a list
 home_page = st.Page("pages/home.py", title="Home")
@@ -27,7 +27,10 @@ pages = {
                 icon=":material/gavel:"),
         st.Page("pages/global_results.py",
                 title="Global Results",
-                icon=":material/table_view:")
+                icon=":material/table_view:"),
+        st.Page("pages/prompts.py",
+                title="Prompts",
+                icon=":material/code:")
     ]
 }
 

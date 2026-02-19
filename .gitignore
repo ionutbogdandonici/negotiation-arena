@@ -24,3 +24,8 @@ Thumbs.db
 # Local artifacts
 *.log
 scenarios/temp
+.claude/
+
+# Output artifacts: keep only the global rollup CSV
+output/*
+!output/global_results.csv

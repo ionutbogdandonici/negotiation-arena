@@ -281,14 +281,14 @@ with report_details:
             for start_idx in range(0, len(metric_aliases), 5):
                 metric_chunk = metric_aliases[start_idx:start_idx + 5]
                 columns = st.columns(len(metric_chunk))
-                for col_idx, (label, aliases) in enumerate(metric_chunk):
+                for column, (label, aliases) in zip(columns, metric_chunk):
                     current_value = _coalesce_numeric(row, aliases)
                     previous_value = _coalesce_numeric(prev_row, aliases)
                     delta = None
                     if current_value is not None and previous_value is not None:
                         delta = current_value - previous_value
 
-                    with columns[col_idx]:
+                    with column:
                         st.metric(
                             label=label,
                             value=current_value if current_value is not None else "N/A",

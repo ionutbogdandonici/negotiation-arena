@@ -21,6 +21,7 @@ DIAGNOSTIC_COLUMNS = [
     ("Concession", "final_concession"),
     ("Cooperation", "final_cooperation"),
 ]
+SCENARIO_FILTER_OPTIONS = ["Resource Division", "Salary Negotiation", "All"]
 
 
 def _to_int(value):
@@ -175,30 +176,27 @@ df = pd.DataFrame(rows)
 if "timestamp_utc" in df.columns:
     df = df.sort_values("timestamp_utc", ascending=False).reset_index(drop=True)
 
-all_scenarios = sorted(df["scenario_name"].dropna().unique().tolist()) if "scenario_name" in df.columns else []
-scenario_options = ["All"] + all_scenarios
-selected_scenario = st.selectbox("Scenario (table)", scenario_options, index=0)
-df_table = df.copy()
-if selected_scenario != "All" and "scenario_name" in df_table.columns:
-    df_table = df_table[df_table["scenario_name"] == selected_scenario].reset_index(drop=True)
-
-if not all_scenarios:
+if "scenario_name" not in df.columns:
     st.info("No scenario names available in global results.")
     st.stop()
 
-default_chart_scenario = (
-    selected_scenario if selected_scenario in all_scenarios else all_scenarios[0]
+selected_scenario = st.selectbox(
+    "Scenario (table)",
+    SCENARIO_FILTER_OPTIONS,
+    index=SCENARIO_FILTER_OPTIONS.index("All"),
 )
-selected_chart_scenario = st.selectbox(
-    "Scenario (charts)",
-    all_scenarios,
-    index=all_scenarios.index(default_chart_scenario),
-)
-df_charts = df[df["scenario_name"] == selected_chart_scenario].reset_index(drop=True)
+if selected_scenario == "All":
+    df_filtered = df.copy()
+else:
+    df_filtered = df[df["scenario_name"] == selected_scenario].reset_index(drop=True)
 
-status_series = df_table.get("agreement_status", pd.Series(index=df_table.index, dtype=str)).apply(_normalize_status)
-outcome_series = df_table.apply(_classify_outcome, axis=1)
-total_runs = len(df_table)
+if df_filtered.empty:
+    st.info(f"No rows available for scenario filter: {selected_scenario}.")
+    st.stop()
+
+status_series = df_filtered.get("agreement_status", pd.Series(index=df_filtered.index, dtype=str)).apply(_normalize_status)
+outcome_series = df_filtered.apply(_classify_outcome, axis=1)
+total_runs = len(df_filtered)
 reached_runs = int((status_series == "reached").sum())
 failed_runs = int((status_series == "failed").sum())
 stalled_runs = int((outcome_series == "stalled").sum())
@@ -213,16 +211,16 @@ with metric_col_3:
 with metric_col_4:
     st.metric("Stalled", stalled_runs)
 
-st.dataframe(df_table, width="stretch")
+st.dataframe(df_filtered, width="stretch")
 st.download_button(
     "Download CSV",
-    data=df_table.to_csv(index=False).encode("utf-8"),
+    data=df_filtered.to_csv(index=False).encode("utf-8"),
     file_name="global_results_export.csv",
     mime="text/csv",
 )
 
-mode_outcome_table_df = _build_mode_outcome_table(df)
-diagnostics_table_df = _build_diagnostics_outcome_table(df)
+mode_outcome_table_df = _build_mode_outcome_table(df_filtered)
+diagnostics_table_df = _build_diagnostics_outcome_table(df_filtered)
 
 summary_table_col_1, summary_table_col_2 = st.columns(2, gap="large")
 with summary_table_col_1:
@@ -249,7 +247,7 @@ with summary_table_col_2:
 
 st.subheader("Utility Trends")
 utility_rows = []
-for idx, row in df_charts.reset_index(drop=True).iterrows():
+for idx, row in df_filtered.reset_index(drop=True).iterrows():
     run_id = str(row.get("run_id", "")).strip()
     scenario_name = str(row.get("scenario_name", "")).strip() or "Unknown"
     timestamp_utc = str(row.get("timestamp_utc", "")).strip()
@@ -272,12 +270,12 @@ for idx, row in df_charts.reset_index(drop=True).iterrows():
         )
 
 if not utility_rows:
-    st.info(f"Utility history not available yet for scenario: {selected_chart_scenario}.")
+    st.info(f"Utility history not available yet for scenario: {selected_scenario}.")
 else:
     utility_df = pd.DataFrame(utility_rows)
     classified_df = utility_df[utility_df["outcome_class"].isin(["reached", "failed", "stalled"])].copy()
     if classified_df.empty:
-        st.info(f"Not enough classified runs yet for scenario: {selected_chart_scenario}.")
+        st.info(f"Not enough classified runs yet for scenario: {selected_scenario}.")
     else:
         trend_col, final_col = st.columns([3, 2], gap="small")
 
@@ -319,7 +317,7 @@ else:
 
 
         duration_rows = []
-        for idx, row in df_charts.reset_index(drop=True).iterrows():
+        for idx, row in df_filtered.reset_index(drop=True).iterrows():
             outcome_class = _classify_outcome(row)
             if outcome_class not in {"reached", "failed", "stalled"}:
                 continue
@@ -339,7 +337,7 @@ else:
             )
 
         if not duration_rows:
-            st.caption(f"Round duration unavailable for scenario: {selected_chart_scenario}.")
+            st.caption(f"Round duration unavailable for scenario: {selected_scenario}.")
         else:
             duration_df = pd.DataFrame(duration_rows)
             avg_duration_df = duration_df.groupby("outcome_class", as_index=False).agg(
@@ -370,7 +368,7 @@ else:
 
             with mode_col:
                 mode_rows = []
-                for _, mode_row in df_charts.reset_index(drop=True).iterrows():
+                for _, mode_row in df_filtered.reset_index(drop=True).iterrows():
                     effective_rounds = _to_int(mode_row.get("effective_rounds"))
                     if effective_rounds is None:
                         continue
@@ -378,7 +376,7 @@ else:
                     mode_rows.append({"mode": mode_name, "rounds": effective_rounds})
 
                 if not mode_rows:
-                    st.caption(f"Mode data unavailable for scenario: {selected_chart_scenario}.")
+                    st.caption(f"Mode data unavailable for scenario: {selected_scenario}.")
                 else:
                     mode_df = pd.DataFrame(mode_rows).groupby("mode", as_index=False).agg(
                         rounds=("rounds", "sum")

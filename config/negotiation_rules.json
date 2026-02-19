@@ -1,6 +1,6 @@
 {
   "max_rounds": 20,
-  "mode": "cooperative",
+  "mode": "competitive",
   "allow_partial_agreements": false,
   "require_unanimous_agreement": false,
   "agents_model": "claude-haiku-4-5-20251001",

@@ -209,7 +209,6 @@
       "type": "score",
       "scale": "1-10",
       "utility_score": "positive",
-      "collect_from": "user",
       "description": "Perceived fairness of the negotiation outcome and process, higher is better"
     },
 
@@ -217,7 +216,6 @@
       "type": "score",
       "scale": "1-10",
       "utility_score": "positive",
-      "collect_from": "user",
       "description": "Candidate's satisfaction with compensation package and negotiation experience, higher is better"
     },
 
@@ -225,7 +223,6 @@
       "type": "score",
       "scale": "1-10",
       "utility_score": "positive",
-      "collect_from": "user",
       "description": "Employer's satisfaction with hire cost and likelihood of acceptance, higher is better"
     },
 
@@ -233,7 +230,6 @@
       "type": "score",
       "scale": "1-10",
       "utility_score": "negative",
-      "collect_from": "user",
       "description": "Risk that candidate will leave within first year due to dissatisfaction, lower is better"
     },
 
@@ -241,15 +237,13 @@
       "type": "score",
       "scale": "1-10",
       "utility_score": "positive",
-      "collect_from": "user",
       "description": "How quickly and smoothly negotiation reached resolution, higher is better"
     },
 
     "value_creation": {
       "type": "score",
       "scale": "1-10",
-      "utility_score": "positive",
-      "collect_from": "user",
+      "utility_score": "positive", 
       "description": "Degree to which negotiation found creative solutions benefiting both parties, higher is better"
     }
   },

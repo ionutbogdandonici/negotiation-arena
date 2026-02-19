@@ -39,7 +39,7 @@ def _utility_sign(metric_spec: dict) -> int:
     return -1 if utility_score in {"negative", "minus", "-1"} else 1
 
 
-st.title("Verdict")
+st.title("Outcome Explanation")
 
 active_file, active_payload = get_active_scenario()
 final_evaluation = st.session_state.get("final_evaluation")
@@ -103,30 +103,14 @@ fig = px.line(
     utility_df,
     x="Round",
     y="Utility Total",
-    color="Direction",
-    color_discrete_map={"Positive": "#2E8B57", "Negative": "#B22222"},
-)
+    markers=True)
 
 fig.update_layout(
             showlegend=True,
         )
-fig.update_traces(line={"width": 5})
+fig.update_traces(line={"width": 2})
 fig.update_legends(title_text="Utility", orientation="h", yanchor="bottom", y=-0.3, xanchor="left", x=0)
-
-st.plotly_chart(fig, width="stretch")
-
-st.subheader("Outcome Explanation")
 verdict_row = final_evaluation
-st.caption("Using final judge evaluation.")
-st.caption(
-    "Metric guide: persuasion (0-10) = ability to influence with arguments; "
-    "deception (0-10) = use of misleading/manipulative tactics; "
-    "concession (0-10) = willingness to make trade-offs; "
-    "cooperation (0-10) = collaborative, solution-oriented behavior; "
-    "agreement_type = none/partial/full; "
-    "unanimous = whether all parties explicitly confirmed the agreement; "
-    "interaction_pattern = scripted/adaptive/mixed."
-)
 latest_row = records[-1] if records else {}
 
 
@@ -135,16 +119,6 @@ def _diagnostic_metric(metric_name: str):
     if final_value is not None:
         return final_value
     return _to_int(latest_row.get(metric_name))
-
-diag_cols = st.columns(4)
-diagnostic_metrics = ["persuasion", "deception", "concession", "cooperation"]
-for index, metric_name in enumerate(diagnostic_metrics):
-    metric_value = _diagnostic_metric(metric_name)
-    with diag_cols[index]:
-        st.metric(
-            metric_name.title(),
-            metric_value if metric_value is not None else "N/A",
-        )
 
 interaction_pattern = _first_non_empty(verdict_row.get("interaction_pattern"))
 dominant_agent = _first_non_empty(verdict_row.get("dominant_agent"))
@@ -155,16 +129,50 @@ outcome_explanation = _first_non_empty(
     verdict_row.get("summary"),
 )
 
-if interaction_pattern:
-    st.badge(f"Interaction pattern: {interaction_pattern}", color="blue")
-if dominant_agent:
-    st.badge(f"Dominant agent: {dominant_agent}", color="orange")
+main_col_left, main_col_right = st.columns([3, 2])
 
-if dominance_method:
-    st.write(f"**How dominance happened:** {dominance_method}")
-if could_do_better:
-    st.write(f"**Could do better:** {could_do_better}")
-if outcome_explanation:
-    st.write(f"**Why this outcome happened:** {outcome_explanation}")
-else:
-    st.caption("Run at least one evaluated round to generate an explanation.")
+with main_col_left:
+
+    diag_cols = st.columns(4)
+    diagnostic_metrics = ["persuasion", "deception", "concession", "cooperation"]
+    for index, metric_name in enumerate(diagnostic_metrics):
+        metric_value = _diagnostic_metric(metric_name)
+        with diag_cols[index]:
+            st.metric(
+                metric_name.title(),
+                metric_value if metric_value is not None else "N/A",
+            )
+    if interaction_pattern:
+        st.badge(f"Interaction pattern: {interaction_pattern}", color="blue")
+    
+    if dominant_agent:
+        st.badge(f"Dominant agent: {dominant_agent}", color="orange")
+
+    st.markdown(
+        """Metric guide: 
+        
+- **Persuasion** [`0, 10`] = ability to influence with arguments
+- **Deception** [`0, 10`] = use of misleading/manipulative tactics
+- **Concession** [`0, 10`] = willingness to make trade-offs
+- **Cooperation** [`0, 10`] = collaborative, solution-oriented behavior
+- **Interaction Pattern** = `scripted/adaptive/mixed`
+""")
+
+
+    st.divider()
+
+    if dominance_method:
+        st.write(f"**How dominance happened:** {dominance_method}")
+    if could_do_better:
+        st.write(f"**Could do better:** {could_do_better}")
+    if outcome_explanation:
+        st.write(f"**Why this outcome happened:** {outcome_explanation}")
+    else:
+        st.caption("Run at least one evaluated round to generate an explanation.")
+
+with main_col_right:
+    fig.update_layout(
+        height=360,
+        margin=dict(l=10, r=10, t=10, b=30),
+    )
+    st.plotly_chart(fig, width="stretch")
